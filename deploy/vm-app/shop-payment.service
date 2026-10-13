@@ -1,0 +1,21 @@
+[Unit]
+Description=Sai Buoc card payment gateway (Spring Boot)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=shop
+Group=shop
+WorkingDirectory=/opt/shop/payment
+EnvironmentFile=/etc/shop/app.env
+ExecStart=/bin/sh -c 'exec /usr/lib/jvm/jre-21/bin/java $PAYMENT_JAVA_OPTS -jar /opt/shop/payment/payment-gateway.jar'
+SuccessExitStatus=143
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+LimitNOFILE=65536
+SyslogIdentifier=shop-payment
+
+[Install]
+WantedBy=multi-user.target
