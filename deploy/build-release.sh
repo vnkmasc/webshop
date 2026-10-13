@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Builds both services and the front end and packs everything the three VMs need:
 #   release/shop-<version>.tar.gz
-#     backend/shop-backend.jar  payment/payment-gateway.jar  frontend/dist/  nginx/  deploy/  scripts/
+#     backend/shop-backend.jar  payment/payment-gateway.jar + Containerfile  frontend/dist/  nginx/  deploy/  scripts/
 # Run on a build machine with JDK 21 and Node 22 (not on the VMs).
 set -euo pipefail
 
@@ -19,7 +19,7 @@ echo "==> Front end"
 rm -rf "${OUT}"
 mkdir -p "${OUT}/backend" "${OUT}/payment" "${OUT}/frontend"
 cp "${ROOT}/backend/target/shop-backend.jar" "${OUT}/backend/"
-cp "${ROOT}/payment/target/payment-gateway.jar" "${OUT}/payment/"
+cp "${ROOT}/payment/target/payment-gateway.jar" "${ROOT}/payment/Containerfile" "${OUT}/payment/"
 cp -r "${ROOT}/frontend/dist" "${OUT}/frontend/dist"
 cp -r "${ROOT}/nginx" "${ROOT}/deploy" "${ROOT}/scripts" "${OUT}/"
 echo "${VERSION}" > "${OUT}/VERSION"

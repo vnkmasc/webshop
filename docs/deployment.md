@@ -49,7 +49,14 @@ vi /etc/shop/app.env
 
 `deploy.sh` thay jar, khởi động lại và chờ `/actuator/health/readiness` báo `UP`; nếu không lên thì tự quay về bản trước.
 
-Dịch vụ: `shop-backend` (8080, health 8081), `shop-payment` (chỉ nghe `127.0.0.1:8090`). Log JSON tại `/var/log/shop/backend.log` và `/var/log/shop/payment.log`; `journalctl -u shop-backend` cho log dạng chữ.
+Hai kiểu chạy trên cùng máy:
+
+| Dịch vụ | Kiểu | Chi tiết |
+|---|---|---|
+| `shop-backend` | Tiến trình Java, systemd | Cổng 8080, health 8081. Jar ở `/opt/shop/backend`, log JSON `/var/log/shop/backend.log` |
+| `shop-payment` | Container Podman, systemd qua Quadlet | `deploy.sh payment` build image `localhost/shop-payment:<thời gian>` từ `payment/Containerfile` (nền `registry.access.redhat.com/ubi9/openjdk-21-runtime`), gắn tag `:current`, giữ bản trước ở `:prev` để quay lại. Chỉ publish `127.0.0.1:8090`. Log JSON `/var/log/shop-payment/payment.log` |
+
+`install.sh` cài thêm `podman`, tải image nền, sinh `/etc/shop/payment.env` từ `app.env` (lệnh `shop-payment-env`) và đặt unit `/etc/containers/systemd/shop-payment.container`. Nếu máy đang chạy bản cũ (cổng thanh toán là service Java), script tự gỡ service cũ.
 
 ## 4. Máy web
 
@@ -78,7 +85,7 @@ Khoảng 60 bước: xem hàng, giỏ hàng, mã giảm giá, đặt hàng COD v
 ./deploy/vm-web/deploy.sh frontend/dist
 ```
 
-Quay lại bản trước: `deploy.sh backend /opt/shop/backend/shop-backend.jar.prev`; giao diện: trỏ lại symlink `/var/www/shop/current` sang thư mục cũ trong `releases/` rồi `systemctl reload nginx`.
+Quay lại bản trước: `deploy.sh backend /opt/shop/backend/shop-backend.jar.prev`; cổng thanh toán: `podman tag localhost/shop-payment:prev localhost/shop-payment:current && systemctl restart shop-payment`; giao diện: trỏ lại symlink `/var/www/shop/current` sang thư mục cũ trong `releases/` rồi `systemctl reload nginx`.
 
 ## 7. Xử lý sự cố
 

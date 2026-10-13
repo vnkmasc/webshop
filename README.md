@@ -5,7 +5,7 @@
 | Máy | Thành phần | Cổng |
 |---|---|---|
 | Web | nginx: giao diện React, reverse proxy `/api` | 80 |
-| Ứng dụng | `shop-backend` (Spring Boot, Java 21) và `shop-payment` (cổng thanh toán thẻ giả lập) | 8080, 8081 (health), 8090 (chỉ nội bộ) |
+| Ứng dụng | `shop-backend` (Spring Boot, Java 21, service systemd) và `shop-payment` (cổng thanh toán thẻ giả lập, **container Podman**) | 8080, 8081 (health), 8090 (chỉ nội bộ) |
 | CSDL | PostgreSQL 16: database `shop` và `payments` | 5432 |
 
 ```
@@ -47,7 +47,7 @@ Thẻ thử: `4111 1111 1111 1111` thành công, `4000 0000 0000 0002` bị từ
 | Thư mục | Nội dung |
 |---|---|
 | `backend/` | API cửa hàng (Spring Boot 3.4, JPA + JDBC, Flyway) |
-| `payment/` | Cổng thanh toán thẻ giả lập (Spring Boot, database riêng) |
+| `payment/` | Cổng thanh toán thẻ giả lập (Spring Boot, database riêng, `Containerfile`) |
 | `frontend/` | React 18 + antd: trang khách hàng và trang quản trị |
 | `nginx/` | Cấu hình nginx cho máy web |
 | `deploy/` | Script cài đặt và triển khai cho từng máy RHEL 9 |
