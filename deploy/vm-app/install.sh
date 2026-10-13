@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Application VM (RHEL 9). Idempotent.
 #   shop-backend: Java process managed by systemd (OpenJDK 21 from AppStream)
-#   shop-payment: Podman container managed by systemd through Quadlet
+#   shop-payment: Docker container (Docker CE from download.docker.com) supervised by systemd
 # Usage: sudo ./install.sh [/etc/shop/app.env]
 # Then deploy: sudo ./deploy.sh payment ../../payment/payment-gateway.jar
 #              sudo ./deploy.sh backend ../../backend/shop-backend.jar
@@ -25,12 +25,22 @@ if [[ "${ENV_FILE}" != /etc/shop/app.env ]]; then
 fi
 chmod 600 /etc/shop/app.env
 
-log "Installing OpenJDK 21 and Podman (AppStream)"
-pkg_install java-21-openjdk-headless curl podman
+log "Installing OpenJDK 21 (AppStream)"
+pkg_install java-21-openjdk-headless curl dnf-plugins-core
 java -version
-podman --version
+
+log "Installing Docker CE (download.docker.com repository for RHEL 9)"
+# Docker rather than Podman: RHEL 9.8 ships crun 1.2x, which monitoring agents may not support for
+# automatic injection into Podman containers, while Docker containers (runc) are widely supported.
+if [[ ! -f /etc/yum.repos.d/docker-ce.repo ]]; then
+    dnf config-manager --add-repo https://download.docker.com/linux/rhel/docker-ce.repo
+fi
+# containerd.io replaces the RHEL runc package; Podman keeps working with crun.
+pkg_install --allowerasing docker-ce docker-ce-cli containerd.io
+systemctl enable --now docker >/dev/null
+docker --version
 log "Pulling the payment container base image"
-podman pull -q "$(awk '/^FROM /{print $2; exit}' "${HERE}/../../payment/Containerfile")" >/dev/null
+docker pull -q "$(awk '/^FROM /{print $2; exit}' "${HERE}/../../payment/Containerfile")" >/dev/null
 
 log "Creating user and directories"
 id shop >/dev/null 2>&1 || useradd --system --home-dir /opt/shop --shell /sbin/nologin shop
@@ -42,16 +52,21 @@ log "Installing systemd units"
 install -m 644 "${HERE}/shop-backend.service" /etc/systemd/system/shop-backend.service
 systemctl daemon-reload
 systemctl enable shop-backend >/dev/null
-# Earlier releases ran the gateway as a plain Java service; the Quadlet unit replaces it.
-if [[ -f /etc/systemd/system/shop-payment.service ]]; then
+# Earlier layouts: a Podman/Quadlet unit, or the gateway as a plain Java service. Both are replaced.
+if [[ -f /etc/containers/systemd/shop-payment.container ]]; then
+    warn "Removing the Podman (Quadlet) shop-payment unit"
+    systemctl stop shop-payment >/dev/null 2>&1 || true
+    rm -f /etc/containers/systemd/shop-payment.container
+    if command -v podman >/dev/null; then podman rm -f shop-payment >/dev/null 2>&1 || true; fi
+elif [[ -f /etc/systemd/system/shop-payment.service ]] && ! grep -q 'docker run' /etc/systemd/system/shop-payment.service; then
     warn "Replacing the old shop-payment Java service with the container"
     systemctl disable --now shop-payment >/dev/null 2>&1 || true
-    rm -f /etc/systemd/system/shop-payment.service
 fi
 install -m 755 "${HERE}/payment-env.sh" /usr/local/sbin/shop-payment-env
 /usr/local/sbin/shop-payment-env
-install -D -m 644 "${HERE}/shop-payment.container" /etc/containers/systemd/shop-payment.container
+install -m 644 "${HERE}/shop-payment.service" /etc/systemd/system/shop-payment.service
 systemctl daemon-reload
+systemctl enable shop-payment >/dev/null
 
 log "Checking connectivity to the database VM"
 if timeout 5 bash -c "</dev/tcp/${DB_HOST}/${DB_PORT:-5432}"; then
@@ -67,4 +82,3 @@ fw_allow_from "${ADMIN_SUBNET}" 8081
 fw_apply
 
 log "Application VM prepared. Deploy with: sudo ${HERE}/deploy.sh payment|backend <jar>"
-log "(Quadlet units start on boot through [Install]; systemctl enable is not used for shop-payment.)"

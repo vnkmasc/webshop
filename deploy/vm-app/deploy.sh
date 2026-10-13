@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Deploys a new version of one service and rolls back automatically when it does not become healthy.
 #   sudo ./deploy.sh backend path/to/shop-backend.jar     (Java process managed by systemd)
-#   sudo ./deploy.sh payment path/to/payment-gateway.jar  (container image built here, run by Quadlet)
+#   sudo ./deploy.sh payment path/to/payment-gateway.jar  (Docker image built here, container run by systemd)
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source-path=SCRIPTDIR source=../common/lib.sh
@@ -12,7 +12,7 @@ SERVICE="${1:?usage: deploy.sh backend|payment path/to/jar}"
 JAR="${2:?usage: deploy.sh backend|payment path/to/jar}"
 [[ -f "${JAR}" ]] || die "${JAR} not found"
 WAIT_SECONDS="${WAIT_SECONDS:-300}"
-IMAGE=localhost/shop-payment
+IMAGE=shop-payment
 
 wait_healthy() {
     local url="$1" waited=0
@@ -62,33 +62,33 @@ deploy_payment() {
     ctx="$(mktemp -d)"
     cp "${JAR}" "${ctx}/payment-gateway.jar"
     log "Building image ${IMAGE}:${tag}"
-    if ! podman build -q -t "${IMAGE}:${tag}" -f "${containerfile}" "${ctx}" >/dev/null; then
+    if ! docker build -q -t "${IMAGE}:${tag}" -f "${containerfile}" "${ctx}" >/dev/null; then
         rm -rf "${ctx}"
         die "Image build failed"
     fi
     rm -rf "${ctx}"
 
     local had_current=false
-    if podman image exists "${IMAGE}:current"; then
-        podman tag "${IMAGE}:current" "${IMAGE}:prev"
+    if docker image inspect "${IMAGE}:current" >/dev/null 2>&1; then
+        docker tag "${IMAGE}:current" "${IMAGE}:prev"
         had_current=true
     fi
-    podman tag "${IMAGE}:${tag}" "${IMAGE}:current"
+    docker tag "${IMAGE}:${tag}" "${IMAGE}:current"
     /usr/local/sbin/shop-payment-env
     log "Restarting shop-payment (container)"
     systemctl restart shop-payment
     if wait_healthy "${health}"; then
         log "shop-payment is healthy: $(curl -fs http://127.0.0.1:8090/actuator/info || true)"
         # Keep the three newest timestamped images (plus :current and :prev).
-        podman images --format '{{.Tag}}' "${IMAGE}" | grep -E '^[0-9]{14}$' | sort -r | tail -n +4 \
-            | xargs -r -I{} podman rmi -f "${IMAGE}:{}" >/dev/null 2>&1 || true
+        docker images --format '{{.Tag}}' "${IMAGE}" | grep -E '^[0-9]{14}$' | sort -r | tail -n +4 \
+            | xargs -r -I{} docker rmi "${IMAGE}:{}" >/dev/null 2>&1 || true
         return 0
     fi
     warn "shop-payment did not become healthy within ${WAIT_SECONDS}s; last log lines:"
     journalctl -u shop-payment -n 60 --no-pager || true
     if [[ "${had_current}" == true ]]; then
         warn "Rolling back to the previous image"
-        podman tag "${IMAGE}:prev" "${IMAGE}:current"
+        docker tag "${IMAGE}:prev" "${IMAGE}:current"
         systemctl restart shop-payment
         if wait_healthy "${health}"; then
             warn "Rolled back successfully"

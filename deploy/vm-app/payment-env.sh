@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Writes /etc/shop/payment.env for the payment container from /etc/shop/app.env.
-# app.env is a shell-style file (quoted values); podman's EnvironmentFile takes values literally,
+# Writes /etc/shop/payment.env (docker --env-file) for the payment container from /etc/shop/app.env.
+# app.env is a shell-style file (quoted values); docker --env-file takes values literally,
 # so only the variables the gateway needs are exported here, unquoted.
 set -euo pipefail
 SRC="${1:-/etc/shop/app.env}"
