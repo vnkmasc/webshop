@@ -17,7 +17,8 @@ Tài liệu này liệt kê **mọi thành phần chạy nền** của hệ th�
 |---|---|---|---|---|---|
 | svfrt | nginx | systemd service | `nginx` | 80 | Có |
 | svbe | Backend cửa hàng | systemd service (Java) | `shop-backend` | 8080, 8081 (health) | Có |
-| svbe | Cổng thanh toán | **container Podman**, quản lý bằng systemd (Quadlet) | `shop-payment` (container cùng tên) | 127.0.0.1:8090 | Có |
+| svbe | Docker Engine (Docker CE) | systemd service | `docker`, `containerd` | - | Có |
+| svbe | Cổng thanh toán | **container Docker**, systemd chạy `docker run` | `shop-payment` (container cùng tên) | 127.0.0.1:8090 | Có |
 | svdb | PostgreSQL 16 (`shop`, `payments`) | systemd service | `postgresql` | 5432 | Có |
 | svdb | Backup database 02:30 hằng ngày | cron | `/etc/cron.d/shop-db-backup` | - | Có |
 | control-plane | Tải giả lập k6 (10 người dùng ảo) | systemd **user** service của `cp` | `shop-load` | - | Có (linger bật) |
@@ -60,34 +61,30 @@ curl -s http://127.0.0.1:8081/actuator/health
 
 Cấu hình: `/etc/shop/app.env`. Log JSON: `/var/log/shop/backend.log`; log dạng chữ: `journalctl -u shop-backend -f`.
 
-### shop-payment (svbe, container)
+### shop-payment (svbe, container Docker)
 
-Cổng thanh toán chạy trong container Podman (`localhost/shop-payment:current`, nền `ubi9/openjdk-21-runtime`). systemd quản lý container qua Quadlet: file `/etc/containers/systemd/shop-payment.container` được systemd chuyển thành service `shop-payment`, nên vẫn dùng `systemctl`.
+Cổng thanh toán chạy trong container Docker, image `shop-payment:current` (nền `registry.access.redhat.com/ubi9/openjdk-21-runtime`). Service systemd `shop-payment` (`/etc/systemd/system/shop-payment.service`) tạo container mới bằng `docker run` mỗi lần start và xóa khi stop, nên vẫn quản lý bằng `systemctl`.
 
 ```bash
 systemctl status shop-payment
 systemctl stop shop-payment      # dừng và xóa container; đơn thẻ thất bại, COD vẫn chạy
 systemctl start shop-payment     # tạo lại container từ image :current
+systemctl disable --now shop-payment   # tắt hẳn, không tự chạy khi khởi động máy
 curl -s http://127.0.0.1:8090/actuator/health
-podman ps                        # container shop-payment
-podman logs -f shop-payment      # hoặc: journalctl -u shop-payment -f
-podman images localhost/shop-payment   # :current (đang chạy), :prev (bản trước), các tag thời gian
-```
-
-Không tự chạy khi khởi động máy: Quadlet không dùng `systemctl disable`, mà phải chuyển file unit ra chỗ khác:
-
-```bash
-systemctl stop shop-payment
-mv /etc/containers/systemd/shop-payment.container /root/ && systemctl daemon-reload
-# bật lại:
-mv /root/shop-payment.container /etc/containers/systemd/ && systemctl daemon-reload && systemctl start shop-payment
+docker ps                         # container shop-payment
+docker logs -f shop-payment       # hoặc: journalctl -u shop-payment -f
+docker images shop-payment        # :current (đang chạy), :prev (bản trước), các tag thời gian
 ```
 
 | File | Nội dung |
 |---|---|
-| `/etc/containers/systemd/shop-payment.container` | Unit Quadlet: image, cổng, volume log, biến môi trường |
+| `/etc/systemd/system/shop-payment.service` | Lệnh `docker run`: image, cổng, volume log, biến môi trường |
 | `/etc/shop/payment.env` | Biến môi trường của container, **sinh từ** `/etc/shop/app.env` bằng `shop-payment-env`. Sửa `app.env` rồi chạy `shop-payment-env && systemctl restart shop-payment` |
 | `/var/log/shop-payment/payment.log` | Log JSON (thư mục mount vào container) |
+
+Docker Engine: `systemctl status docker`. Docker CE cài từ repo `download.docker.com` (`/etc/yum.repos.d/docker-ce.repo`). Podman (có sẵn trên RHEL) vẫn còn nhưng không chạy container nào của hệ thống.
+
+Vì sao Docker mà không phải Podman: RHEL 9.8 đi kèm crun 1.27, ngoài dải phiên bản mà công cụ giám sát hỗ trợ tự gắn vào container Podman (crun 0.17-1.15); container Docker (runc) thì được hỗ trợ.
 
 ### PostgreSQL (svdb)
 
@@ -131,7 +128,7 @@ Tải giả lập liên tục tạo đơn hàng thật trong database. Nhóm qu�
 ```bash
 systemctl --user disable --now shop-load                                 # control-plane
 ssh root@192.168.50.64 'systemctl disable --now nginx'
-ssh root@192.168.50.65 'systemctl disable --now shop-backend; systemctl stop shop-payment; mv /etc/containers/systemd/shop-payment.container /root/; systemctl daemon-reload'
+ssh root@192.168.50.65 'systemctl disable --now shop-backend shop-payment'
 ssh root@192.168.50.66 'systemctl disable --now postgresql; mv /etc/cron.d/shop-db-backup /root/ 2>/dev/null'
 ```
 
@@ -139,12 +136,12 @@ Bật lại theo thứ tự CSDL → ứng dụng → web → tải:
 
 ```bash
 ssh root@192.168.50.66 'systemctl enable --now postgresql; mv /root/shop-db-backup /etc/cron.d/ 2>/dev/null'
-ssh root@192.168.50.65 'mv /root/shop-payment.container /etc/containers/systemd/; systemctl daemon-reload; systemctl start shop-payment; systemctl enable --now shop-backend'
+ssh root@192.168.50.65 'systemctl enable --now shop-payment shop-backend'
 ssh root@192.168.50.64 'systemctl enable --now nginx'
 systemctl --user enable --now shop-load
 ```
 
-Dữ liệu, cấu hình và firewall không bị đụng tới khi tắt.
+Dữ liệu, cấu hình và firewall không bị đụng tới khi tắt. `docker` vẫn chạy (không có container nào); tắt hẳn: `systemctl disable --now docker docker.socket containerd`.
 
 ## 5. Thành phần cũ (logistics) đã tắt
 

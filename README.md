@@ -5,7 +5,7 @@
 | Máy | Thành phần | Cổng |
 |---|---|---|
 | Web | nginx: giao diện React, reverse proxy `/api` | 80 |
-| Ứng dụng | `shop-backend` (Spring Boot, Java 21, service systemd) và `shop-payment` (cổng thanh toán thẻ giả lập, **container Podman**) | 8080, 8081 (health), 8090 (chỉ nội bộ) |
+| Ứng dụng | `shop-backend` (Spring Boot, Java 21, service systemd) và `shop-payment` (cổng thanh toán thẻ giả lập, **container Docker**) | 8080, 8081 (health), 8090 (chỉ nội bộ) |
 | CSDL | PostgreSQL 16: database `shop` và `payments` | 5432 |
 
 ```

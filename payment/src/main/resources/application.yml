@@ -33,6 +33,9 @@ management:
       probes:
         enabled: true
       show-details: always
+  info:
+    env:
+      enabled: true
 
 info:
   release:
