@@ -67,11 +67,21 @@ systemctl stop postgresql          # máy CSDL: toàn bộ API lỗi, readiness 
 systemctl stop shop-backend        # máy ứng dụng: nginx trả 502
 ```
 
-## 4. Gợi ý một buổi demo
+## 4. Điều kiện để công cụ giám sát mở cảnh báo
 
-1. Chạy tải `steady` với 8-10 người dùng từ trước ít nhất 1 giờ.
+Một kịch bản chỉ gây hậu quả khi **có request đi qua**. Bật sự cố lúc không có tải (hoặc tải chỉ bắt đầu sau khi kịch bản đã hết hạn) thì không có gì để phát hiện.
+
+- **Luôn chạy tải nền trước**, rồi mới bật kịch bản. Kiểm tra: `systemctl --user is-active shop-load` trên máy điều khiển.
+- **Đặt thời lượng kịch bản đủ dài**, 20-30 phút. Các cơ chế phát hiện bất thường cần sự cố kéo dài nhiều phút liên tục, không tính đột biến ngắn.
+- **Dịch vụ mới cần thời gian học mức bình thường.** Cảnh báo dựa trên baseline tự học (tỷ lệ lỗi, tải tăng/giảm) cần dữ liệu từ khoảng hơn một ngày đến một tuần. Mỗi lần đổi cách chạy một dịch vụ (ví dụ chuyển sang container), hệ thống giám sát có thể coi đó là dịch vụ mới và học lại từ đầu, nên hạn chế thay đổi hạ tầng sát ngày demo.
+- **Cảnh báo theo ngưỡng cố định hoạt động ngay**, không cần học: CPU host bão hòa, hết bộ nhớ, tiến trình hoặc dịch vụ ngừng hoạt động. Để có cảnh báo ngay trong ngày đầu, ưu tiên các kịch bản: `HIGH_CPU` với `cpuMs` 4000-5000 (đẩy CPU máy ứng dụng lên gần 100%), dừng hẳn `shop-payment` hoặc `shop-backend`, hoặc đặt ngưỡng thời gian phản hồi / tỷ lệ lỗi cố định cho dịch vụ trong cấu hình phát hiện bất thường.
+- Dịch vụ có ít request (dưới khoảng 10 request/phút) có thể bị bỏ qua để tránh báo nhiễu. Với 10 người dùng ảo, backend nhận khoảng 300 request/phút; cổng thanh toán chỉ khoảng 3-4 request/phút, nên muốn cảnh báo trên cổng thanh toán thì tăng `VUS` trong `~/.config/shop-load/env` lên 30-40.
+
+## 5. Gợi ý một buổi demo
+
+1. Chạy tải nền liên tục từ ít nhất 1-2 ngày trước (để có baseline), tối thiểu vài giờ.
 2. Mở trang khách hàng, đặt một đơn bằng thẻ, theo dõi request đi qua nginx → backend → dịch vụ thanh toán → hai database.
-3. Bật `SLOW_SQL` 15 phút → chỉ ra câu SQL nguyên nhân.
+3. Bật `SLOW_SQL` 3000 ms trong 30 phút → chỉ ra câu SQL nguyên nhân.
 4. Đặt cổng thanh toán "Quá thời gian chờ" → đơn thẻ thất bại, tỷ lệ thất bại trên trang Tổng quan tăng → chỉ ra dịch vụ ngoài là gốc.
 5. Bật `FRONTEND_ERROR` → khách không thêm được hàng vào giỏ, số đơn giảm dù server không có lỗi nào.
 6. Tắt các kịch bản, đưa cổng thanh toán về "Bình thường".
