@@ -52,7 +52,7 @@ Thẻ thử: `4111 1111 1111 1111` thành công, `4000 0000 0000 0002` bị từ
 | `nginx/` | Cấu hình nginx cho máy web |
 | `deploy/` | Script cài đặt và triển khai cho từng máy RHEL 9 |
 | `scripts/` | Smoke test, sinh ảnh sản phẩm, kịch bản tải k6 |
-| `docs/` | Triển khai, kịch bản demo |
+| `docs/` | Triển khai, vận hành (bật/tắt), kịch bản demo |
 
 ## Phát triển
 
@@ -66,4 +66,4 @@ cd frontend && VITE_DEV_PROXY_TARGET=http://localhost:8080 npm run dev
 (cd backend && ./mvnw test) && (cd payment && ./mvnw test) && (cd frontend && npm test)
 ```
 
-Triển khai lên ba máy: [docs/deployment.md](docs/deployment.md).
+Triển khai lên ba máy: [docs/deployment.md](docs/deployment.md). Danh sách những gì đang chạy và cách bật/tắt: [docs/operations.md](docs/operations.md).
