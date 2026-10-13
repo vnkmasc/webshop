@@ -15,7 +15,7 @@ public class CoreConfig {
         return Clock.systemUTC();
     }
 
-    /** Client for the payment gateway service (separate process on the app VM). */
+    /** Client for the payment gateway service (separate process, see PAYMENT_URL). */
     @Bean
     public RestClient paymentRestClient(AppProperties props) {
         var settings = ClientHttpRequestFactorySettings.defaults()

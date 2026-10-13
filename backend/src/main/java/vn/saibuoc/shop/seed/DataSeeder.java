@@ -243,7 +243,7 @@ public class DataSeeder {
                         'CUSTOMER', ?) returning id""", Long.class, hash, Timestamp.from(now.minus(Duration.ofDays(120))));
         ids.add(new long[]{demo});
         names.put(demo, new String[]{"Nguyễn Minh Khách", "0901234567", "12 Lê Lợi, Quận 1", "TP. Hồ Chí Minh", "khach@saibuoc.vn"});
-        // Accounts reserved for load tests (their orders are cleaned up by scripts/load/reset-load-data.sql).
+        // Accounts reserved for load-test tooling (load01..load20), so generated orders are easy to tell apart.
         for (int i = 1; i <= 20; i++) {
             String email = "load%02d@saibuoc.vn".formatted(i);
             Long id = jdbc.queryForObject("""
