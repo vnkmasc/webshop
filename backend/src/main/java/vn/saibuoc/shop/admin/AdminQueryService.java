@@ -31,7 +31,7 @@ public class AdminQueryService {
 
     public record OrderRow(String code, String customerName, String phone, String province, BigDecimal total,
                            String status, String paymentMethod, String paymentStatus, int itemCount, String couponCode,
-                           OffsetDateTime createdAt) {
+                           OffsetDateTime createdAt, String riskLevel, Integer riskScore) {
     }
 
     public record StatusCount(String status, long count) {
@@ -61,13 +61,17 @@ public class AdminQueryService {
 
     @Transactional(readOnly = true)
     public PageResponse<OrderRow> orders(String status, String q, LocalDate from, LocalDate to, String payment,
-                                         int page, int size) {
+                                         String risk, int page, int size) {
         int pageSize = Math.min(Math.max(size, 1), 200);
         MapSqlParameterSource p = new MapSqlParameterSource();
         StringBuilder where = new StringBuilder("TRUE");
         if (status != null && !status.isBlank()) {
             where.append(" AND o.status = :status");
             p.addValue("status", status);
+        }
+        if (risk != null && !risk.isBlank()) {
+            where.append(" AND o.risk_level = :risk");
+            p.addValue("risk", risk);
         }
         if (payment != null && !payment.isBlank()) {
             where.append(" AND o.payment_method = :payment");
@@ -89,13 +93,14 @@ public class AdminQueryService {
         p.addValue("limit", pageSize).addValue("offset", (long) Math.max(page, 0) * pageSize);
         List<OrderRow> rows = jdbc.query("""
                 SELECT o.code, o.customer_name, o.phone, o.province, o.total, o.status, o.payment_method,
-                       o.payment_status, o.coupon_code, o.created_at,
+                       o.payment_status, o.coupon_code, o.created_at, o.risk_level, o.risk_score,
                        (SELECT COALESCE(sum(i.quantity), 0) FROM order_items i WHERE i.order_id = o.id) AS item_count
                 FROM orders o WHERE %s ORDER BY o.created_at DESC LIMIT :limit OFFSET :offset""".formatted(where), p,
                 (rs, i) -> new OrderRow(rs.getString("code"), rs.getString("customer_name"), rs.getString("phone"),
                         rs.getString("province"), rs.getBigDecimal("total"), rs.getString("status"),
                         rs.getString("payment_method"), rs.getString("payment_status"), rs.getInt("item_count"),
-                        rs.getString("coupon_code"), rs.getObject("created_at", OffsetDateTime.class)));
+                        rs.getString("coupon_code"), rs.getObject("created_at", OffsetDateTime.class),
+                        rs.getString("risk_level"), (Integer) rs.getObject("risk_score")));
         return PageResponse.of(rows, Math.max(page, 0), pageSize, total);
     }
 

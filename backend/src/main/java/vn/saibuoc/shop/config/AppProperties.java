@@ -12,7 +12,8 @@ public record AppProperties(
         String adminPassword,
         Jwt jwt,
         Shipping shipping,
-        Payment payment) {
+        Payment payment,
+        Risk risk) {
 
     public record Jwt(String secret, Duration ttl) {
     }
@@ -21,5 +22,9 @@ public record AppProperties(
     }
 
     public record Payment(String url, String apiKey, Duration connectTimeout, Duration readTimeout) {
+    }
+
+    /** Order risk scoring service; disabled when url is empty. */
+    public record Risk(String url, String apiKey, Duration timeout) {
     }
 }

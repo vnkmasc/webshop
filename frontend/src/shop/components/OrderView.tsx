@@ -1,7 +1,7 @@
 import { Descriptions, Space, Table, Tag, Timeline } from 'antd';
 import type { Order } from '@/api/types';
 import { dateTime, money } from '@/utils/format';
-import { ORDER_STATUS, PAYMENT_METHOD, PAYMENT_STATUS } from '@/utils/labels';
+import { ORDER_STATUS, PAYMENT_METHOD, PAYMENT_STATUS, RISK_LEVEL, RISK_REASON } from '@/utils/labels';
 
 export function StatusTags({ order }: { order: Pick<Order, 'status' | 'paymentStatus'> }) {
   return (
@@ -24,6 +24,12 @@ export function OrderView({ order, showHistory = true }: { order: Order; showHis
         <Descriptions.Item label="Địa chỉ">{order.address}, {order.province}</Descriptions.Item>
         {order.note && <Descriptions.Item label="Ghi chú" span={2}>{order.note}</Descriptions.Item>}
         {order.paymentError && <Descriptions.Item label="Lỗi thanh toán" span={2}>{order.paymentError}</Descriptions.Item>}
+        {order.riskLevel && (
+          <Descriptions.Item label="Chấm điểm rủi ro" span={2}>
+            <Tag color={RISK_LEVEL[order.riskLevel].color}>{RISK_LEVEL[order.riskLevel].label}</Tag> {order.riskScore} điểm
+            {order.riskReasons?.length ? <> · {order.riskReasons.map((r) => RISK_REASON[r] ?? r).join(', ')}</> : null}
+          </Descriptions.Item>
+        )}
       </Descriptions>
       <Table size="small" pagination={false} rowKey="variantId" dataSource={order.items} scroll={{ x: 500 }}
         columns={[

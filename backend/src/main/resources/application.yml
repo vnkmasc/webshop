@@ -82,6 +82,10 @@ app:
     api-key: ${PAYMENT_API_KEY:}
     connect-timeout: PT2S
     read-timeout: ${PAYMENT_READ_TIMEOUT:PT8S}
+  risk:
+    url: ${APP_RISK_URL:}
+    api-key: ${RISK_API_KEY:}
+    timeout: ${RISK_TIMEOUT:PT3S}
 
 logging:
   pattern:

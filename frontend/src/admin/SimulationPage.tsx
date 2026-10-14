@@ -58,6 +58,12 @@ const SCENARIOS: Record<string, { title: string; effect: string; fields: Field[]
   METRIC_CARDINALITY: { title: 'Nổ cardinality metric', effect: 'Counter shop.request.tagged gắn tag duy nhất theo từng request; số series tăng vọt rồi dừng ở ngưỡng (tối đa 5.000), tắt thì xoá hết.', fields: [
     { name: 'perRequest', label: 'Series mỗi request', kind: 'number', def: 10, max: 50 },
     { name: 'maxSeries', label: 'Ngưỡng (tối đa 5000)', kind: 'number', def: 5000, max: 5000 }] },
+  RISK_SLOW: { title: 'Dịch vụ rủi ro chậm', effect: 'Dịch vụ chấm điểm (Python) trả lời chậm thêm N ms; thời gian đặt hàng tăng, nằm ở dịch vụ Python.', fields: [
+    { name: 'delayMs', label: 'Độ trễ (ms)', kind: 'number', def: 2000, max: 2900 }] },
+  RISK_ERROR: { title: 'Dịch vụ rủi ro lỗi', effect: 'Một tỷ lệ lời gọi chấm điểm trả 500; đơn vẫn đặt được (không chấm điểm).', fields: [
+    { name: 'percent', label: 'Tỷ lệ (%)', kind: 'number', def: 30, max: 100 }] },
+  RISK_TIMEOUT: { title: 'Dịch vụ rủi ro quá thời gian chờ', effect: 'Dịch vụ chấm điểm trả lời sau thời gian chờ 3 giây của backend; đơn vẫn đặt được, chậm thêm ~3 giây.', fields: [
+    { name: 'delayMs', label: 'Độ trễ (ms)', kind: 'number', def: 5000, max: 30000 }] },
   READINESS_FAIL: { title: 'Readiness hỏng', effect: '/actuator/health/readiness báo DOWN (liveness vẫn UP); bộ cân bằng tải ngừng gửi request tới backend.', fields: [] },
 };
 

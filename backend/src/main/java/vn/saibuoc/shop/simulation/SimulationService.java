@@ -23,6 +23,7 @@ import org.springframework.stereotype.Service;
 import vn.saibuoc.shop.common.BusinessException;
 import vn.saibuoc.shop.config.AppProperties;
 import vn.saibuoc.shop.payment.PaymentClient;
+import vn.saibuoc.shop.risk.RiskClient;
 
 /**
  * Controlled fault injection for test environments. Off unless APP_SIMULATION_ENABLED=true.
@@ -68,8 +69,17 @@ public class SimulationService {
          * A counter gets a tag whose value is unique per request, exploding the number of metric series.
          * Hard cap MAX_TAGGED_SERIES; all series are removed when the scenario ends. params: perRequest, maxSeries
          */
-        METRIC_CARDINALITY
+        METRIC_CARDINALITY,
+        /** The risk service answers N ms later (params: delayMs, default 2000); checkout waits for it. */
+        RISK_SLOW,
+        /** A share of risk scoring calls fail with 500 (params: percent, default 30); orders still go through. */
+        RISK_ERROR,
+        /** The risk service answers after the backend timeout (params: delayMs, default 5000; timeout 3 s). */
+        RISK_TIMEOUT
     }
+
+    private static final java.util.Set<Scenario> RISK_SCENARIOS = java.util.EnumSet.of(Scenario.RISK_SLOW,
+            Scenario.RISK_ERROR, Scenario.RISK_TIMEOUT);
 
     public static final String TAGGED_METRIC = "shop.request.tagged";
     public static final int MAX_TAGGED_SERIES = 5000;
@@ -121,6 +131,7 @@ public class SimulationService {
     private final JdbcTemplate jdbc;
     private final Clock clock;
     private final PaymentClient paymentClient;
+    private final RiskClient riskClient;
     private final MeterRegistry meters;
     private final AtomicInteger taggedSeries = new AtomicInteger();
 
@@ -149,6 +160,9 @@ public class SimulationService {
         if (scenario == Scenario.METRIC_CARDINALITY) {
             clearTaggedSeries();
         }
+        if (RISK_SCENARIOS.contains(scenario)) {
+            pushRiskScenario(scenario, true, state);
+        }
         if (scenario == Scenario.ODD_STATUS && !ODD_STATUSES.containsKey(intParam(state, "code", 423))) {
             throw BusinessException.badRequest("BAD_CODE", "Mã HTTP phải là một trong " + ODD_STATUSES.keySet());
         }
@@ -167,6 +181,13 @@ public class SimulationService {
         }
         if (scenario == Scenario.MEMORY_LEAK) {
             retained.clear();
+        }
+        if (RISK_SCENARIOS.contains(scenario)) {
+            try {
+                riskClient.setScenario(scenario.name(), false, null, null);
+            } catch (RuntimeException e) {
+                log.warn("Could not switch {} off in the risk service: {}", scenario, e.getMessage());
+            }
         }
         log.warn("Simulation scenario {} deactivated by {}", scenario, by);
         return current(scenario);
@@ -262,11 +283,29 @@ public class SimulationService {
         }
     }
 
-    /** Scenarios live in memory: after a restart nothing is active, so the gateway mode is reset too. */
+    private void pushRiskScenario(Scenario scenario, boolean active, ScenarioState st) {
+        try {
+            riskClient.setScenario(scenario.name(), active, st.params(), st.expiresAt());
+        } catch (RuntimeException e) {
+            throw new BusinessException(HttpStatus.BAD_GATEWAY, "RISK_UNREACHABLE",
+                    "Không kết nối được dịch vụ chấm điểm rủi ro để bật kịch bản");
+        }
+    }
+
+    /** Scenarios live in memory: after a restart nothing is active, so the gateway and risk service are reset too. */
     @EventListener(ApplicationReadyEvent.class)
     public void resetOnStartup() {
         if (enabled()) {
             clearBusinessError();
+            if (riskClient.enabled()) {
+                for (Scenario s : RISK_SCENARIOS) {
+                    try {
+                        riskClient.setScenario(s.name(), false, null, null);
+                    } catch (RuntimeException e) {
+                        log.warn("Could not reset {} in the risk service: {}", s, e.getMessage());
+                    }
+                }
+            }
         }
     }
 

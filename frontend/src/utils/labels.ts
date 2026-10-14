@@ -16,6 +16,19 @@ export const PAYMENT_STATUS: Record<PaymentStatus, { label: string; color: strin
   REFUNDED: { label: 'Đã hoàn tiền', color: 'purple' },
 };
 
+export const RISK_LEVEL: Record<string, { label: string; color: string }> = {
+  HIGH: { label: 'Rủi ro cao - cần kiểm tra', color: 'red' },
+  MEDIUM: { label: 'Rủi ro trung bình', color: 'orange' },
+  LOW: { label: 'Rủi ro thấp', color: 'green' },
+};
+
+export const RISK_REASON: Record<string, string> = {
+  AMOUNT_UNUSUAL: 'Giá trị bất thường',
+  REPEAT_PHONE_24H: 'Nhiều đơn cùng SĐT trong 24h',
+  COD_HIGH_VALUE: 'COD giá trị lớn',
+  NEW_PROVINCE: 'Tỉnh giao khác các đơn trước',
+};
+
 export const PAYMENT_METHOD: Record<string, string> = {
   COD: 'Thanh toán khi nhận hàng',
   CARD: 'Thẻ tín dụng / ghi nợ',

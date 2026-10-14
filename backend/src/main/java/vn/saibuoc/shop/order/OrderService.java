@@ -34,7 +34,9 @@ import vn.saibuoc.shop.catalog.ProductVariant;
 import vn.saibuoc.shop.catalog.ProductVariantRepository;
 import vn.saibuoc.shop.common.BusinessException;
 import vn.saibuoc.shop.config.AppProperties;
+import org.springframework.jdbc.core.JdbcTemplate;
 import vn.saibuoc.shop.payment.PaymentClient;
+import vn.saibuoc.shop.risk.RiskClient;
 import vn.saibuoc.shop.security.CurrentUser;
 import vn.saibuoc.shop.simulation.SimulationService;
 
@@ -61,11 +63,15 @@ public class OrderService {
     private final MeterRegistry meters;
     private final DistributionSummary orderValue;
     private final SimulationService simulation;
+    private final RiskClient riskClient;
+    private final JdbcTemplate jdbc;
 
     public OrderService(OrderRepository orders, ProductVariantRepository variants, CouponRepository coupons,
                         PaymentClient paymentClient, TransactionTemplate tx, AppProperties props, Clock clock,
-                        MeterRegistry meters, SimulationService simulation) {
+                        MeterRegistry meters, SimulationService simulation, RiskClient riskClient, JdbcTemplate jdbc) {
         this.simulation = simulation;
+        this.riskClient = riskClient;
+        this.jdbc = jdbc;
         this.orders = orders;
         this.variants = variants;
         this.coupons = coupons;
@@ -127,11 +133,13 @@ public class OrderService {
     public record HistoryDto(String fromStatus, String toStatus, String note, String changedBy, Instant changedAt) {
     }
 
+    /** riskScore/riskLevel/riskReasons are only filled for admin views; null for customers. */
     public record OrderDto(String code, String status, String paymentMethod, String paymentStatus, String paymentRef,
                            String paymentError, String customerName, String phone, String email, String address,
                            String province, String note, BigDecimal subtotal, BigDecimal discount,
                            BigDecimal shippingFee, BigDecimal total, String couponCode, Long userId,
-                           Instant createdAt, Instant updatedAt, List<OrderItemDto> items, List<HistoryDto> history) {
+                           Instant createdAt, Instant updatedAt, List<OrderItemDto> items, List<HistoryDto> history,
+                           Integer riskScore, String riskLevel, List<String> riskReasons) {
     }
 
     public record OrderSummary(String code, String status, String paymentMethod, String paymentStatus,
@@ -216,6 +224,7 @@ public class OrderService {
             throw BusinessException.badRequest("CARD_REQUIRED", "Vui lòng nhập thông tin thẻ");
         }
         String code = tx.execute(s -> reserve(req, user));
+        scoreRisk(code);
         Order.PaymentMethod method = req.paymentMethod();
         if (method == Order.PaymentMethod.CARD) {
             BigDecimal total = tx.execute(s -> load(code).getTotal());
@@ -251,7 +260,7 @@ public class OrderService {
             tx.executeWithoutResult(s -> paid(code, result.reference()));
             meters.counter("shop.payments", "result", "approved").increment();
         }
-        OrderDto dto = tx.execute(s -> toDto(load(code)));
+        OrderDto dto = tx.execute(s -> toDto(load(code), false));
         orderValue.record(dto.total().doubleValue());
         Counter.builder("shop.orders.placed").tag("payment", method.name()).register(meters).increment();
         log.info("Order placed code={} total={} items={} payment={} coupon={} customer={}", dto.code(), dto.total(),
@@ -310,6 +319,58 @@ public class OrderService {
         addHistory(o, null, Order.Status.PENDING, "Đặt hàng", user == null ? "Khách vãng lai" : user.email());
         orders.save(o);
         return o.getCode();
+    }
+
+    // ------------------------------------------------------------------ risk scoring
+
+    record RiskSignals(long avgOrderValue, int phoneOrders24h, List<String> previousProvinces) {
+    }
+
+    /**
+     * Scores the order with the risk service before payment. Auxiliary: if the service is off, fails or times out
+     * the order continues unscored. HIGH risk orders are flagged for manual review in the order history.
+     */
+    private void scoreRisk(String code) {
+        if (!riskClient.enabled()) {
+            return;
+        }
+        RiskClient.ScoreRequest request = tx.execute(s -> {
+            Order o = load(code);
+            RiskSignals sig = riskSignals(o);
+            return new RiskClient.ScoreRequest(code, o.getTotal().longValue(), o.getPaymentMethod().name(), o.getPhone(),
+                    o.getProvince(), sig.avgOrderValue(), sig.phoneOrders24h(), sig.previousProvinces());
+        });
+        RiskClient.ScoreResult r = riskClient.score(request);
+        if (r == null) {
+            meters.counter("shop.risk", "level", "unscored").increment();
+            return;
+        }
+        meters.counter("shop.risk", "level", r.level()).increment();
+        tx.executeWithoutResult(s -> {
+            Order o = load(code);
+            o.setRiskScore(r.score());
+            o.setRiskLevel(r.level());
+            String reasons = String.join(",", r.reasons() == null ? List.of() : r.reasons());
+            o.setRiskReasons(reasons.substring(0, Math.min(reasons.length(), 200)));
+            if ("HIGH".equals(r.level())) {
+                addHistory(o, o.getStatus(), o.getStatus(), "Rủi ro cao (" + r.score() + " điểm: " + reasons
+                        + ") - cần kiểm tra thủ công trước khi xác nhận", "Chấm điểm rủi ro");
+                log.warn("Order {} flagged for manual review: risk {} {}", code, r.score(), reasons);
+            }
+        });
+    }
+
+    private RiskSignals riskSignals(Order o) {
+        Long avg = jdbc.queryForObject("""
+                SELECT COALESCE(avg(total), 0)::bigint FROM orders WHERE created_at > now() - interval '30 days'
+                AND status NOT IN ('CANCELLED', 'PAYMENT_FAILED') AND id <> ?""", Long.class, o.getId());
+        Integer phone24 = jdbc.queryForObject("""
+                SELECT count(*) FROM orders WHERE phone = ? AND created_at > now() - interval '24 hours' AND id <> ?""",
+                Integer.class, o.getPhone(), o.getId());
+        List<String> provinces = jdbc.queryForList("""
+                SELECT DISTINCT province FROM orders WHERE phone = ? AND id <> ? LIMIT 10""", String.class,
+                o.getPhone(), o.getId());
+        return new RiskSignals(avg == null ? 0 : avg, phone24 == null ? 0 : phone24, provinces);
     }
 
     private void paid(String code, String reference) {
@@ -383,7 +444,7 @@ public class OrderService {
             o.setUpdatedAt(clock.instant());
             addHistory(o, from, target, blankToNull(note), by);
             log.info("Order {} {} -> {} by {}", code, from, target, by);
-            return toDto(o);
+            return toDto(o, true);
         });
     }
 
@@ -432,7 +493,7 @@ public class OrderService {
             releaseReservation(o);
             addHistory(o, from, Order.Status.CANCELLED, blankToNull(note) == null ? "Hủy đơn" : note, by);
             log.info("Order {} cancelled by {}{}", code, byCustomer ? "customer " : "", by);
-            return toDto(o);
+            return toDto(o, !byCustomer);
         });
     }
 
@@ -461,7 +522,7 @@ public class OrderService {
     }
 
     public OrderDto adminGet(String code) {
-        return tx.execute(s -> toDto(load(code)));
+        return tx.execute(s -> toDto(load(code), true));
     }
 
     // ------------------------------------------------------------------ helpers
@@ -482,6 +543,10 @@ public class OrderService {
     }
 
     private OrderDto toDto(Order o) {
+        return toDto(o, false);
+    }
+
+    private OrderDto toDto(Order o, boolean admin) {
         return new OrderDto(o.getCode(), o.getStatus().name(), o.getPaymentMethod().name(), o.getPaymentStatus().name(),
                 o.getPaymentRef(), o.getPaymentError(), o.getCustomerName(), o.getPhone(), o.getEmail(), o.getAddress(),
                 o.getProvince(), o.getNote(), o.getSubtotal(), o.getDiscount(), o.getShippingFee(), o.getTotal(),
@@ -489,7 +554,10 @@ public class OrderService {
                 o.getItems().stream().map(i -> new OrderItemDto(i.getProductId(), i.getVariantId(), i.getProductName(),
                         i.getSize(), i.getImage(), i.getUnitPrice(), i.getQuantity(), i.getLineTotal())).toList(),
                 o.getHistory().stream().map(h -> new HistoryDto(h.getFromStatus(), h.getToStatus(), h.getNote(),
-                        h.getChangedBy(), h.getChangedAt())).toList());
+                        h.getChangedBy(), h.getChangedAt())).toList(),
+                admin ? o.getRiskScore() : null, admin ? o.getRiskLevel() : null,
+                admin && o.getRiskReasons() != null && !o.getRiskReasons().isBlank()
+                        ? List.of(o.getRiskReasons().split(",")) : null);
     }
 
     private static OrderSummary summary(Order o) {

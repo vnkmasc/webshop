@@ -90,6 +90,15 @@ public class Order {
     @Column(name = "coupon_code")
     private String couponCode;
 
+    @Column(name = "risk_score")
+    private Integer riskScore;
+
+    @Column(name = "risk_level")
+    private String riskLevel;
+
+    @Column(name = "risk_reasons")
+    private String riskReasons;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 

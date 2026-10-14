@@ -33,6 +33,7 @@ export type ProductInput = Omit<AdminProduct, 'id' | 'slug' | 'soldCount' | 'cre
 export interface OrderRow {
   code: string; customerName: string; phone: string; province: string; total: number; status: OrderStatus;
   paymentMethod: string; paymentStatus: string; itemCount: number; couponCode: string | null; createdAt: string;
+  riskLevel: 'LOW' | 'MEDIUM' | 'HIGH' | null; riskScore: number | null;
 }
 
 export interface CustomerRow {

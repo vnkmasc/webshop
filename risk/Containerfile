@@ -1,0 +1,18 @@
+# Order risk scoring service (Python 3.11, FastAPI).
+#   docker build -t shop-risk:<tag> -f risk/Containerfile risk
+# EXTRA_PIP_PACKAGES installs optional packages at build time (for example a monitoring agent's Python
+# package); the service itself has no vendor dependency.
+FROM registry.access.redhat.com/ubi9/python-311:1-1779945715
+
+ARG EXTRA_PIP_PACKAGES=""
+WORKDIR /opt/app-root/src
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt \
+    && if [ -n "${EXTRA_PIP_PACKAGES}" ]; then pip install --no-cache-dir ${EXTRA_PIP_PACKAGES}; fi
+COPY app ./app
+COPY tests ./tests
+RUN python -m unittest discover -s tests -t . -q
+
+ENV RISK_PORT=8095
+EXPOSE 8095
+CMD ["sh", "-c", "exec uvicorn app.main:app --host 0.0.0.0 --port ${RISK_PORT} --no-access-log"]

@@ -8,7 +8,7 @@ import { errorMessage } from '@/api/client';
 import type { OrderStatus } from '@/api/types';
 import { OrderView } from '@/shop/components/OrderView';
 import { dateTime, money } from '@/utils/format';
-import { ORDER_STATUS, PAYMENT_STATUS } from '@/utils/labels';
+import { ORDER_STATUS, PAYMENT_STATUS, RISK_LEVEL } from '@/utils/labels';
 
 const ACTION_LABEL: Partial<Record<OrderStatus, string>> = {
   CONFIRMED: 'Xác nhận đơn', SHIPPING: 'Giao cho vận chuyển', DELIVERED: 'Đã giao thành công', CANCELLED: 'Hủy đơn',
@@ -18,7 +18,7 @@ export default function OrdersPage() {
   const { message, modal } = App.useApp();
   const queryClient = useQueryClient();
   const [params, setParams] = useSearchParams();
-  const [filters, setFilters] = useState({ status: params.get('status') ?? '', q: '', payment: '', page: 0, size: 20,
+  const [filters, setFilters] = useState({ status: params.get('status') ?? '', q: '', payment: '', risk: '', page: 0, size: 20,
     from: undefined as string | undefined, to: undefined as string | undefined });
   const openCode = params.get('code');
 
@@ -80,6 +80,9 @@ export default function OrdersPage() {
         <Input.Search placeholder="Mã đơn, SĐT, tên, email" allowClear style={{ width: 260 }} onSearch={(q) => setFilters({ ...filters, q, page: 0 })} />
         <Select style={{ width: 200 }} value={filters.payment} onChange={(payment) => setFilters({ ...filters, payment, page: 0 })}
           options={[{ value: '', label: 'Mọi hình thức thanh toán' }, { value: 'COD', label: 'COD' }, { value: 'CARD', label: 'Thẻ' }]} />
+        <Select style={{ width: 200 }} value={filters.risk} onChange={(risk) => setFilters({ ...filters, risk, page: 0 })}
+          options={[{ value: '', label: 'Mọi mức rủi ro' }, { value: 'HIGH', label: 'Rủi ro cao (cần kiểm tra)' },
+            { value: 'MEDIUM', label: 'Rủi ro trung bình' }, { value: 'LOW', label: 'Rủi ro thấp' }]} />
         <DatePicker.RangePicker format="DD/MM/YYYY" onChange={(r) => setFilters({ ...filters, page: 0,
           from: (r?.[0] as Dayjs | null)?.format('YYYY-MM-DD'), to: (r?.[1] as Dayjs | null)?.format('YYYY-MM-DD') })} />
       </Space>
@@ -96,6 +99,9 @@ export default function OrdersPage() {
           { title: 'Thanh toán', render: (_, r) => <>{r.paymentMethod === 'CARD' ? 'Thẻ' : 'COD'}<br />
             <Tag color={PAYMENT_STATUS[r.paymentStatus as keyof typeof PAYMENT_STATUS].color}>{PAYMENT_STATUS[r.paymentStatus as keyof typeof PAYMENT_STATUS].label}</Tag></> },
           { title: 'Trạng thái', dataIndex: 'status', render: (s: OrderStatus) => <Tag color={ORDER_STATUS[s].color}>{ORDER_STATUS[s].label}</Tag> },
+          { title: 'Rủi ro', dataIndex: 'riskLevel', render: (l: string | null, r) => (l
+            ? <Tag color={RISK_LEVEL[l].color}>{l === 'HIGH' ? 'Cần kiểm tra' : RISK_LEVEL[l].label.replace('Rủi ro ', '')} · {r.riskScore}</Tag>
+            : <span style={{ color: '#bbb' }}>-</span>) },
         ]} />
       <Drawer open={!!openCode} onClose={() => setOpen(null)} width={760} title={`Đơn hàng ${openCode ?? ''}`}
         extra={detail && (

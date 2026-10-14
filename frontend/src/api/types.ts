@@ -162,7 +162,13 @@ export interface Order {
     lineTotal: number;
   }[];
   history: { fromStatus: string | null; toStatus: string; note: string | null; changedBy: string | null; changedAt: string }[];
+  /** Admin views only. */
+  riskScore?: number | null;
+  riskLevel?: RiskLevel | null;
+  riskReasons?: string[] | null;
 }
+
+export type RiskLevel = 'LOW' | 'MEDIUM' | 'HIGH';
 
 export interface OrderSummary {
   code: string;
