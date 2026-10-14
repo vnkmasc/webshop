@@ -26,6 +26,7 @@ import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
+import org.slf4j.MDC;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -35,6 +36,7 @@ import vn.saibuoc.shop.common.BusinessException;
 import vn.saibuoc.shop.config.AppProperties;
 import vn.saibuoc.shop.payment.PaymentClient;
 import vn.saibuoc.shop.security.CurrentUser;
+import vn.saibuoc.shop.simulation.SimulationService;
 
 /**
  * Cart pricing, checkout and the order life cycle.
@@ -58,10 +60,12 @@ public class OrderService {
     private final Clock clock;
     private final MeterRegistry meters;
     private final DistributionSummary orderValue;
+    private final SimulationService simulation;
 
     public OrderService(OrderRepository orders, ProductVariantRepository variants, CouponRepository coupons,
                         PaymentClient paymentClient, TransactionTemplate tx, AppProperties props, Clock clock,
-                        MeterRegistry meters) {
+                        MeterRegistry meters, SimulationService simulation) {
+        this.simulation = simulation;
         this.orders = orders;
         this.variants = variants;
         this.coupons = coupons;
@@ -216,9 +220,19 @@ public class OrderService {
         if (method == Order.PaymentMethod.CARD) {
             BigDecimal total = tx.execute(s -> load(code).getTotal());
             PaymentClient.ChargeResult result;
+            PaymentClient.PiiFields pii = simulation.emitPiiActive() ? new PaymentClient.PiiFields(
+                    SimulationService.PII_EMAIL, SimulationService.PII_CARD_NUMBER, SimulationService.PII_CARD_CVV) : null;
+            if (pii != null) {
+                // EMIT_PII fault injection: fixed fake values, never the customer's input.
+                MDC.put("customer.email", pii.email());
+                MDC.put("payment.card_number", pii.cardNumber());
+                MDC.put("payment.card_cvv", pii.cardCvv());
+                log.info("Card checkout order={} customer.email={} payment.card_number={} payment.card_cvv={}", code,
+                        pii.email(), pii.cardNumber(), pii.cardCvv());
+            }
             try {
                 result = paymentClient.charge(code, total, new PaymentClient.Card(req.card().number().replace(" ", ""),
-                        req.card().holder(), req.card().expiry(), req.card().cvv()));
+                        req.card().holder(), req.card().expiry(), req.card().cvv()), pii);
             } catch (RuntimeException e) {
                 // Whatever went wrong talking to the gateway, the reservation must be released.
                 tx.executeWithoutResult(s -> paymentFailed(code, "Cổng thanh toán không phản hồi"));

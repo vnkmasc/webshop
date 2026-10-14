@@ -54,6 +54,7 @@ const SCENARIOS: Record<string, { title: string; effect: string; fields: Field[]
       { value: 451, label: '451 - Giữ theo yêu cầu pháp lý' }, { value: 429, label: '429 - Quá nhiều yêu cầu' }] },
     { name: 'target', label: 'Nhóm API', kind: 'target', def: 'CHECKOUT' },
     { name: 'percent', label: 'Tỷ lệ (%)', kind: 'number', def: 40, max: 100 }] },
+  EMIT_PII: { title: 'Lộ dữ liệu nhạy cảm (giả)', effect: 'Thanh toán thẻ đính email, số thẻ, CVV giả (4111…, demo@example.com, 000) vào URL, header và log để thử tính năng che dữ liệu.', fields: [] },
   READINESS_FAIL: { title: 'Readiness hỏng', effect: '/actuator/health/readiness báo DOWN (liveness vẫn UP); bộ cân bằng tải ngừng gửi request tới backend.', fields: [] },
 };
 

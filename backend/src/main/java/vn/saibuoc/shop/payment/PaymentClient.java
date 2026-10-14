@@ -51,12 +51,36 @@ public class PaymentClient {
     }
 
     public ChargeResult charge(String orderCode, BigDecimal amount, Card card) {
+        return charge(orderCode, amount, card, null);
+    }
+
+    /** Fake sensitive values attached to the gateway call by the EMIT_PII fault-injection scenario. */
+    public record PiiFields(String email, String cardNumber, String cardCvv) {
+    }
+
+    public ChargeResult charge(String orderCode, BigDecimal amount, Card card, PiiFields pii) {
         Map<String, Object> body = Map.of("orderCode", orderCode, "amount", amount, "currency", "VND",
                 "card", Map.of("number", card.number(), "holder", card.holder(), "expiry", card.expiry(), "cvv", card.cvv()));
         try {
-            Envelope<ChargeResult> res = paymentRestClient.post().uri("/api/payments/charge")
+            Envelope<ChargeResult> res = paymentRestClient.post()
+                    .uri(b -> {
+                        b.path("/api/payments/charge");
+                        if (pii != null) {
+                            b.queryParam("customer.email", pii.email())
+                                    .queryParam("payment.card_number", pii.cardNumber())
+                                    .queryParam("payment.card_cvv", pii.cardCvv());
+                        }
+                        return b.build();
+                    })
                     .contentType(MediaType.APPLICATION_JSON)
-                    .header("X-Request-Id", requestId())
+                    .headers(h -> {
+                        h.set("X-Request-Id", requestId());
+                        if (pii != null) {
+                            h.set("X-Customer-Email", pii.email());
+                            h.set("X-Card-Number", pii.cardNumber());
+                            h.set("X-Card-Cvv", pii.cardCvv());
+                        }
+                    })
                     .body(body)
                     .retrieve()
                     .body(new ParameterizedTypeReference<Envelope<ChargeResult>>() { });

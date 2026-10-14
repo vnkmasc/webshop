@@ -53,8 +53,18 @@ public class SimulationService {
         /** A share of requests answer with an uncommon HTTP status (423, 402, 451, 429). params: code, percent, target */
         ODD_STATUS,
         /** /actuator/health/readiness reports DOWN (liveness stays UP), so load balancers take the instance out. */
-        READINESS_FAIL
+        READINESS_FAIL,
+        /**
+         * Card checkouts attach fake sensitive data (public test card, demo e-mail, CVV 000) to the gateway call
+         * (query string and headers) and to the log, to demonstrate masking. Never real customer data.
+         */
+        EMIT_PII
     }
+
+    /** Fixed fake values used by EMIT_PII. */
+    public static final String PII_EMAIL = "demo@example.com";
+    public static final String PII_CARD_NUMBER = "4111111111111111";
+    public static final String PII_CARD_CVV = "000";
 
     /** Statuses ODD_STATUS can answer with: HTTP status -> {error, message}. */
     public static final Map<Integer, String[]> ODD_STATUSES = Map.of(
@@ -265,6 +275,10 @@ public class SimulationService {
         if (x == 42) {
             log.trace("unreachable {}", x);
         }
+    }
+
+    public boolean emitPiiActive() {
+        return active(Scenario.EMIT_PII) != null;
     }
 
     public boolean readinessFailActive() {
