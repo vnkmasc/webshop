@@ -1,12 +1,12 @@
 # Sải Bước - cửa hàng giày trực tuyến
 
-Ứng dụng web bán giày gồm trang mua sắm cho khách, trang quản trị cho cửa hàng và một dịch vụ cổng thanh toán thẻ giả lập. Repo này chỉ chứa **mã nguồn ứng dụng**; cách triển khai lên từng loại hạ tầng, tải giả lập và kịch bản demo nằm ở repo `webshop-demo`.
+Ứng dụng web bán giày gồm trang mua sắm cho khách, trang quản trị cho cửa hàng, một dịch vụ cổng thanh toán thẻ giả lập (Java) và một dịch vụ chấm điểm rủi ro đơn hàng (Python). Repo này chỉ chứa **mã nguồn ứng dụng**; cách triển khai lên từng loại hạ tầng, tải giả lập và kịch bản demo nằm ở repo `webshop-demo`.
 
 ## Kiến trúc
 
 ```
 Trình duyệt ──> frontend (React, file tĩnh) ──/api──> backend (Spring Boot) ──JDBC──> PostgreSQL: shop
-                                                            │
+                                                            ├──HTTP──> risk (Python, FastAPI)
                                                             └──HTTP──> payment (Spring Boot) ──JDBC──> PostgreSQL: payments
 ```
 
@@ -15,6 +15,7 @@ Trình duyệt ──> frontend (React, file tĩnh) ──/api──> backend (S
 | `frontend/` | React 18, Vite, antd, TanStack Query, recharts | (file tĩnh) | Phục vụ bằng web server bất kỳ; mọi đường dẫn không phải file → `index.html`; `/api/` chuyển sang backend |
 | `backend/` | Spring Boot 3.4, Java 21, JPA + JDBC, Flyway, JWT | 8080 (API), 8081 (actuator) | Database `shop` |
 | `payment/` | Spring Boot 3.4, Java 21, JDBC, Flyway | 8090 (API + actuator) | Database `payments`; có `Containerfile` |
+| `risk/` | Python 3.11, FastAPI | 8095 | Không database; phụ trợ: không phản hồi thì đơn vẫn đặt được. Xem [risk/README.md](risk/README.md) |
 | PostgreSQL | 16 | 5432 | Hai database riêng; bảng do Flyway tạo khi khởi động |
 
 ## Tính năng
@@ -34,6 +35,7 @@ Trình duyệt ──> frontend (React, file tĩnh) ──/api──> backend (S
 - Mô phỏng sự cố (khi bật `APP_SIMULATION_ENABLED`).
 
 **Quy tắc chính**
+- Đơn được dịch vụ rủi ro chấm điểm sau khi giữ hàng, trước khi thanh toán; mức `HIGH` (≥ 60) được ghi "cần kiểm tra thủ công" và lọc được ở trang quản trị.
 - Đặt hàng khóa tồn kho theo thứ tự (không bán quá số lượng), thanh toán thẻ gọi cổng thanh toán **ngoài** transaction; thanh toán thất bại hoặc cổng không phản hồi (timeout 8 giây) thì đơn chuyển "Thanh toán thất bại" và hoàn kho, hoàn lượt mã giảm giá.
 - Vòng đời đơn: Chờ xác nhận → Đã xác nhận → Đang giao → Đã giao; hủy được ở hai bước đầu. COD được tính đã thanh toán khi giao xong.
 
@@ -49,6 +51,8 @@ Trình duyệt ──> frontend (React, file tĩnh) ──/api──> backend (S
 | `JWT_SECRET` | - (bắt buộc, ≥ 32 byte) | Ký token đăng nhập |
 | `PAYMENT_URL`, `PAYMENT_API_KEY` | `http://127.0.0.1:8090`, - | Địa chỉ và khóa dùng chung với dịch vụ payment |
 | `PAYMENT_READ_TIMEOUT` | `PT8S` | Thời gian chờ cổng thanh toán |
+| `APP_RISK_URL`, `RISK_API_KEY` | -, - | Dịch vụ chấm điểm rủi ro; để trống `APP_RISK_URL` thì không chấm điểm |
+| `RISK_TIMEOUT` | `PT3S` | Thời gian chờ dịch vụ rủi ro |
 | `APP_ADMIN_EMAIL`, `APP_ADMIN_PASSWORD` | `admin@saibuoc.vn`, - | Tài khoản quản trị tạo ở lần khởi động đầu |
 | `APP_SEED_ENABLED` | `false` (`true` ở profile `local`) | Nạp dữ liệu mẫu khi database trống: 96 sản phẩm, ~250 khách, 90 ngày đơn hàng, mã giảm giá |
 | `APP_SIMULATION_ENABLED` | `false` (`true` ở profile `local`) | Bật API và trang mô phỏng sự cố |
@@ -98,6 +102,7 @@ Khi `APP_SIMULATION_ENABLED=true`, quản trị viên bật/tắt các kịch b�
 | `ODD_STATUS` | Một tỷ lệ request trả 423/402/451/429 kèm body `error`, `message`; 423 và 429 có `Retry-After: 30` (`code`, `percent`, `target`) |
 | `READINESS_FAIL` | `/actuator/health/readiness` báo DOWN, liveness vẫn UP |
 | `EMIT_PII` | Thanh toán thẻ đính dữ liệu giả cố định (thẻ test `4111111111111111`, `demo@example.com`, CVV `000`) vào URL, header của lệnh gọi sang payment và vào log |
+| `RISK_SLOW`, `RISK_ERROR`, `RISK_TIMEOUT` | Dịch vụ rủi ro chậm thêm `delayMs` / lỗi 500 ở `percent` lời gọi / trả lời quá timeout 3 giây; đơn vẫn đặt được |
 | `METRIC_CARDINALITY` | Counter `shop.request.tagged` có tag duy nhất theo request, tối đa 5.000 series, xoá hết khi tắt (`perRequest`, `maxSeries`) |
 
 Nhóm API (`target`): `ALL`, `CATALOG`, `CART`, `CHECKOUT`, `ACCOUNT`, `ADMIN`.
