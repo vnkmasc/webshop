@@ -56,7 +56,7 @@ management:
       show-details: always
       group:
         readiness:
-          include: readinessState,db
+          include: readinessState,db,simulation
   info:
     env:
       enabled: true

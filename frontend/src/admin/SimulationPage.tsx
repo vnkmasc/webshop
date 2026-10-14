@@ -54,6 +54,7 @@ const SCENARIOS: Record<string, { title: string; effect: string; fields: Field[]
       { value: 451, label: '451 - Giữ theo yêu cầu pháp lý' }, { value: 429, label: '429 - Quá nhiều yêu cầu' }] },
     { name: 'target', label: 'Nhóm API', kind: 'target', def: 'CHECKOUT' },
     { name: 'percent', label: 'Tỷ lệ (%)', kind: 'number', def: 40, max: 100 }] },
+  READINESS_FAIL: { title: 'Readiness hỏng', effect: '/actuator/health/readiness báo DOWN (liveness vẫn UP); bộ cân bằng tải ngừng gửi request tới backend.', fields: [] },
 };
 
 function ScenarioCard({ s, onChange, busy }: { s: ScenarioState; onChange: (active: boolean, params?: Record<string, unknown>, minutes?: number) => void; busy: boolean }) {

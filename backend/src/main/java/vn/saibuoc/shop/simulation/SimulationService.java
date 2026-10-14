@@ -51,7 +51,9 @@ public class SimulationService {
          */
         PAYMENT_BUSINESS_ERROR,
         /** A share of requests answer with an uncommon HTTP status (423, 402, 451, 429). params: code, percent, target */
-        ODD_STATUS
+        ODD_STATUS,
+        /** /actuator/health/readiness reports DOWN (liveness stays UP), so load balancers take the instance out. */
+        READINESS_FAIL
     }
 
     /** Statuses ODD_STATUS can answer with: HTTP status -> {error, message}. */
@@ -263,6 +265,10 @@ public class SimulationService {
         if (x == 42) {
             log.trace("unreachable {}", x);
         }
+    }
+
+    public boolean readinessFailActive() {
+        return active(Scenario.READINESS_FAIL) != null;
     }
 
     public boolean frontendErrorActive() {
