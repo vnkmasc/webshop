@@ -14,7 +14,14 @@ const TARGETS = [
   { value: 'ADMIN', label: 'Trang quản trị' },
 ];
 
-type Field = { name: string; label: string; kind: 'number' | 'target'; def: number | string; max?: number };
+type Field = {
+  name: string;
+  label: string;
+  kind: 'number' | 'target' | 'select';
+  def: number | string;
+  max?: number;
+  options?: { value: string | number; label: string }[];
+};
 
 const SCENARIOS: Record<string, { title: string; effect: string; fields: Field[] }> = {
   LATENCY: { title: 'API chậm', effect: 'Thêm độ trễ ngẫu nhiên cho một nhóm API.', fields: [
@@ -37,6 +44,10 @@ const SCENARIOS: Record<string, { title: string; effect: string; fields: Field[]
     { name: 'kbPerRequest', label: 'KB mỗi request', kind: 'number', def: 256, max: 10240 },
     { name: 'capMb', label: 'Giới hạn (MB)', kind: 'number', def: 1500, max: 2500 }] },
   FRONTEND_ERROR: { title: 'Lỗi JavaScript', effect: 'Nút "Thêm vào giỏ" ném lỗi JavaScript, khách không thêm được hàng.', fields: [] },
+  PAYMENT_BUSINESS_ERROR: { title: 'Lỗi nghiệp vụ trong body', effect: 'Cổng thanh toán trả HTTP 200 nhưng responseCode khác 00 (kiểu core banking); đơn thẻ thất bại.', fields: [
+    { name: 'code', label: 'Mã phản hồi', kind: 'select', def: '99', options: [
+      { value: '99', label: '99 - Core bận' }, { value: '68', label: '68 - Tài khoản không đủ điều kiện' }, { value: '12', label: '12 - Sai định dạng' }] },
+    { name: 'percent', label: 'Tỷ lệ (%)', kind: 'number', def: 40, max: 100 }] },
 };
 
 function ScenarioCard({ s, onChange, busy }: { s: ScenarioState; onChange: (active: boolean, params?: Record<string, unknown>, minutes?: number) => void; busy: boolean }) {
@@ -54,9 +65,11 @@ function ScenarioCard({ s, onChange, busy }: { s: ScenarioState; onChange: (acti
       <Form form={form} layout="vertical" initialValues={initial} disabled={s.active}>
         <Row gutter={8}>
           {spec.fields.map((f) => (
-            <Col span={f.kind === 'target' ? 24 : 12} key={f.name}>
+            <Col span={f.kind === 'number' ? 12 : 24} key={f.name}>
               <Form.Item name={f.name} label={f.label} style={{ marginBottom: 8 }}>
-                {f.kind === 'target' ? <Select options={TARGETS} /> : <InputNumber min={0} max={f.max} style={{ width: '100%' }} />}
+                {f.kind === 'target' ? <Select options={TARGETS} />
+                  : f.kind === 'select' ? <Select options={f.options} />
+                    : <InputNumber min={0} max={f.max} style={{ width: '100%' }} />}
               </Form.Item>
             </Col>
           ))}

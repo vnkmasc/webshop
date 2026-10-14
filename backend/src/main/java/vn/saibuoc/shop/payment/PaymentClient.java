@@ -1,6 +1,7 @@
 package vn.saibuoc.shop.payment;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -23,14 +24,23 @@ public class PaymentClient {
     public record Card(String number, String holder, String expiry, String cvv) {
     }
 
-    /** status: APPROVED or DECLINED. */
+    /** status: APPROVED, DECLINED, or BUSINESS_ERROR (HTTP 200 with a responseCode other than "00"). */
     public record ChargeResult(String reference, String status, String reason) {
         public boolean approved() {
             return "APPROVED".equals(status);
         }
+
+        public boolean businessError() {
+            return "BUSINESS_ERROR".equals(status);
+        }
     }
 
-    record Envelope<T>(boolean success, T data, String message, String errorCode) {
+    /** responseCode/responseMessage: core-banking style outcome carried in the body ("00" = processed). */
+    record Envelope<T>(boolean success, T data, String message, String errorCode, String responseCode,
+                       String responseMessage) {
+    }
+
+    public record BusinessErrorMode(String code, int percent, Instant until) {
     }
 
     /** Gateway unreachable, timed out or answered with a server error. */
@@ -50,6 +60,12 @@ public class PaymentClient {
                     .body(body)
                     .retrieve()
                     .body(new ParameterizedTypeReference<Envelope<ChargeResult>>() { });
+            // HTTP 200 does not mean the payment went through: the outcome is the body's responseCode.
+            if (res != null && res.responseCode() != null && !"00".equals(res.responseCode())) {
+                log.warn("Payment for order {} rejected by the core: responseCode={} ({})", orderCode,
+                        res.responseCode(), res.responseMessage());
+                return new ChargeResult(null, "BUSINESS_ERROR", "[" + res.responseCode() + "] " + res.responseMessage());
+            }
             if (res == null || res.data() == null) {
                 throw new GatewayException("Empty response from payment gateway", null);
             }
@@ -78,6 +94,16 @@ public class PaymentClient {
         } catch (RestClientException e) {
             log.error("Refund of payment {} failed: {}", reference, e.getMessage());
             throw new GatewayException("Refund failed: " + e.getMessage(), e);
+        }
+    }
+
+    /** Switches the gateway's business-error mode on (until the given instant) or off (percent 0). */
+    public void setBusinessError(BusinessErrorMode mode) {
+        try {
+            paymentRestClient.put().uri("/api/admin/business-error").contentType(MediaType.APPLICATION_JSON)
+                    .body(mode).retrieve().toBodilessEntity();
+        } catch (RestClientException e) {
+            throw new GatewayException("Payment gateway unreachable: " + e.getMessage(), e);
         }
     }
 

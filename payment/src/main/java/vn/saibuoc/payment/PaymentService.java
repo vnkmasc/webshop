@@ -26,6 +26,7 @@ public class PaymentService {
     private final Clock clock;
     private final MeterRegistry meters;
     private final AtomicReference<GatewaySettings> settings = new AtomicReference<>(GatewaySettings.defaults());
+    private final AtomicReference<BusinessErrorMode> businessError = new AtomicReference<>(null);
 
     public PaymentService(JdbcTemplate jdbc, MeterRegistry meters) {
         this.jdbc = jdbc;
@@ -56,6 +57,20 @@ public class PaymentService {
         }
     }
 
+    /** A charge answered with a business response code other than "00" (HTTP stays 200). */
+    public static class BusinessCodeException extends RuntimeException {
+        private final String code;
+
+        public BusinessCodeException(String code, String message) {
+            super(message);
+            this.code = code;
+        }
+
+        public String code() {
+            return code;
+        }
+    }
+
     public static class NotFoundException extends RuntimeException {
         public NotFoundException(String message) {
             super(message);
@@ -70,6 +85,31 @@ public class PaymentService {
         log.warn("Gateway settings changed: {}", s);
         settings.set(s);
         return s;
+    }
+
+    /** Current business-error mode, or null when off (expired modes are cleared here). */
+    public BusinessErrorMode businessError() {
+        BusinessErrorMode m = businessError.get();
+        if (m != null && !m.activeAt(clock.instant())) {
+            businessError.compareAndSet(m, null);
+            log.warn("Business error mode {} expired", m.code());
+            return null;
+        }
+        return m;
+    }
+
+    public BusinessErrorMode setBusinessError(BusinessErrorMode mode) {
+        if (mode == null || mode.percent() <= 0) {
+            businessError.set(null);
+            log.warn("Business error mode switched off");
+            return null;
+        }
+        if (!BusinessErrorMode.MESSAGES.containsKey(mode.code())) {
+            throw new IllegalArgumentException("Unsupported response code " + mode.code());
+        }
+        businessError.set(new BusinessErrorMode(mode.code(), Math.min(mode.percent(), 100), mode.until()));
+        log.warn("Business error mode on: code={} percent={} until={}", mode.code(), mode.percent(), mode.until());
+        return businessError.get();
     }
 
     public ChargeResult charge(ChargeRequest req) {
@@ -89,6 +129,21 @@ public class PaymentService {
             meters.counter("gateway.charges", "result", "error").increment();
             log.error("Acquirer connection reset while authorizing order {}", req.orderCode());
             throw new AcquirerException(502, "Acquirer connection reset by peer");
+        }
+        BusinessErrorMode mode = businessError();
+        if (mode != null && ThreadLocalRandom.current().nextInt(100) < mode.percent()) {
+            String msg = mode.message();
+            jdbc.update("""
+                    insert into payments (reference, order_code, amount, currency, card_brand, card_last4, status, reason,
+                                          processing_ms, created_at)
+                    values (?, ?, ?, ?, ?, ?, 'DECLINED', ?, ?, ?)""",
+                    "PAY-" + HexFormat.of().withUpperCase().formatHex(randomBytes()), req.orderCode(), req.amount(),
+                    req.currency() == null ? "VND" : req.currency(), brand, last4, "[" + mode.code() + "] " + msg,
+                    (int) ((System.nanoTime() - start) / 1_000_000), Timestamp.from(clock.instant()));
+            meters.counter("gateway.charges", "result", "business_error").increment();
+            log.warn("Core banking responded code {} ({}) on POST /api/payments/charge order={}", mode.code(), msg,
+                    req.orderCode());
+            throw new BusinessCodeException(mode.code(), msg);
         }
         if (reason == null && number.endsWith("0002")) {
             reason = "Thẻ bị ngân hàng phát hành từ chối";

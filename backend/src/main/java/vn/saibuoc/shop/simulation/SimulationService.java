@@ -10,9 +10,14 @@ import java.util.Map;
 import java.util.concurrent.ThreadLocalRandom;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.event.EventListener;
+import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
+import vn.saibuoc.shop.common.BusinessException;
 import vn.saibuoc.shop.config.AppProperties;
+import vn.saibuoc.shop.payment.PaymentClient;
 
 /**
  * Controlled fault injection for test environments. Off unless APP_SIMULATION_ENABLED=true.
@@ -39,8 +44,16 @@ public class SimulationService {
         /** Each request retains memory until released, bounded by a cap. params: kbPerRequest, capMb */
         MEMORY_LEAK,
         /** The storefront "add to cart" button throws a JavaScript error. */
-        FRONTEND_ERROR
+        FRONTEND_ERROR,
+        /**
+         * The payment gateway answers HTTP 200 with a business responseCode other than "00" (core-banking style).
+         * params: code (99 | 68 | 12), percent
+         */
+        PAYMENT_BUSINESS_ERROR
     }
+
+    /** Business response codes the gateway can return in PAYMENT_BUSINESS_ERROR. */
+    public static final java.util.Set<String> BUSINESS_CODES = java.util.Set.of("99", "68", "12");
 
     /** Endpoint groups a scenario can target. */
     public enum Target {
@@ -73,6 +86,7 @@ public class SimulationService {
     private final AppProperties props;
     private final JdbcTemplate jdbc;
     private final Clock clock;
+    private final PaymentClient paymentClient;
 
     private final Map<Scenario, ScenarioState> states = new EnumMap<>(Scenario.class);
     private final List<byte[]> retained = new ArrayList<>();
@@ -93,6 +107,9 @@ public class SimulationService {
         int minutes = Math.min(Math.max(durationMinutes, 1), 240);
         ScenarioState state = new ScenarioState(scenario, true, Map.copyOf(params == null ? Map.of() : params),
                 clock.instant().plus(Duration.ofMinutes(minutes)));
+        if (scenario == Scenario.PAYMENT_BUSINESS_ERROR) {
+            pushBusinessError(state);
+        }
         states.put(scenario, state);
         log.warn("Simulation scenario {} activated by {} for {} min params={}", scenario, by, minutes, state.params());
         return state;
@@ -100,6 +117,9 @@ public class SimulationService {
 
     public synchronized ScenarioState deactivate(Scenario scenario, String by) {
         states.remove(scenario);
+        if (scenario == Scenario.PAYMENT_BUSINESS_ERROR) {
+            clearBusinessError();
+        }
         if (scenario == Scenario.MEMORY_LEAK) {
             retained.clear();
         }
@@ -136,6 +156,39 @@ public class SimulationService {
         }
         ScenarioState st = current(s);
         return st.active() ? st : null;
+    }
+
+    // ------------------------------------------------------------------ payment gateway business-error mode
+
+    /** The gateway keeps its own expiry (same instant), so it also switches off if this process is gone. */
+    private void pushBusinessError(ScenarioState st) {
+        String code = String.valueOf(st.params().getOrDefault("code", "99"));
+        if (!BUSINESS_CODES.contains(code)) {
+            throw BusinessException.badRequest("BAD_CODE", "Mã phản hồi phải là 99, 68 hoặc 12");
+        }
+        try {
+            paymentClient.setBusinessError(new PaymentClient.BusinessErrorMode(code,
+                    Math.min(Math.max(intParam(st, "percent", 40), 0), 100), st.expiresAt()));
+        } catch (PaymentClient.GatewayException e) {
+            throw new BusinessException(HttpStatus.BAD_GATEWAY, "GATEWAY_UNREACHABLE",
+                    "Không kết nối được cổng thanh toán để bật kịch bản");
+        }
+    }
+
+    private void clearBusinessError() {
+        try {
+            paymentClient.setBusinessError(new PaymentClient.BusinessErrorMode("99", 0, null));
+        } catch (PaymentClient.GatewayException e) {
+            log.warn("Could not switch the gateway business-error mode off: {}", e.getMessage());
+        }
+    }
+
+    /** Scenarios live in memory: after a restart nothing is active, so the gateway mode is reset too. */
+    @EventListener(ApplicationReadyEvent.class)
+    public void resetOnStartup() {
+        if (enabled()) {
+            clearBusinessError();
+        }
     }
 
     // ------------------------------------------------------------------ hooks on the request path

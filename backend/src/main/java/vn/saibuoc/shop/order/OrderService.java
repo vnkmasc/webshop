@@ -229,8 +229,10 @@ public class OrderService {
             }
             if (!result.approved()) {
                 tx.executeWithoutResult(s -> paymentFailed(code, result.reason()));
-                meters.counter("shop.payments", "result", "declined").increment();
-                throw BusinessException.unprocessable("PAYMENT_DECLINED", "Thanh toán bị từ chối: " + result.reason());
+                meters.counter("shop.payments", "result", result.businessError() ? "business_error" : "declined").increment();
+                throw BusinessException.unprocessable("PAYMENT_DECLINED", result.businessError()
+                        ? "Thanh toán không thành công " + result.reason()
+                        : "Thanh toán bị từ chối: " + result.reason());
             }
             tx.executeWithoutResult(s -> paid(code, result.reference()));
             meters.counter("shop.payments", "result", "approved").increment();

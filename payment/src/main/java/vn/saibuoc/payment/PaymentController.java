@@ -2,6 +2,7 @@ package vn.saibuoc.payment;
 
 import jakarta.validation.Valid;
 import java.math.BigDecimal;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -20,6 +21,8 @@ public class PaymentController {
 
     private static final Logger log = LoggerFactory.getLogger(PaymentController.class);
 
+    static final String RESPONSE_CODE_HEADER = "X-Response-Code";
+
     private final PaymentService payments;
 
     public PaymentController(PaymentService payments) {
@@ -30,11 +33,40 @@ public class PaymentController {
     }
 
     @PostMapping("/api/payments/charge")
-    public Envelope<PaymentService.ChargeResult> charge(@RequestBody PaymentService.ChargeRequest req) {
+    public ResponseEntity<Map<String, Object>> charge(@RequestBody PaymentService.ChargeRequest req) {
         if (req.orderCode() == null || req.amount() == null || req.amount().signum() <= 0 || req.card() == null) {
             throw new IllegalArgumentException("orderCode, amount and card are required");
         }
-        return Envelope.ok(payments.charge(req));
+        PaymentService.ChargeResult result = payments.charge(req);
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("success", true);
+        body.put("responseCode", "00");
+        body.put("responseMessage", "Giao dịch được xử lý");
+        body.put("data", result);
+        return ResponseEntity.ok().header(RESPONSE_CODE_HEADER, "00").body(body);
+    }
+
+    /** Core-banking style failure: HTTP 200, the outcome is only in the body and the X-Response-Code header. */
+    @ExceptionHandler(PaymentService.BusinessCodeException.class)
+    public ResponseEntity<Map<String, Object>> businessCode(PaymentService.BusinessCodeException e) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("responseCode", e.code());
+        body.put("responseMessage", e.getMessage());
+        body.put("data", null);
+        return ResponseEntity.ok().header(RESPONSE_CODE_HEADER, e.code()).body(body);
+    }
+
+    public record BusinessErrorRequest(String code, int percent, java.time.Instant until) {
+    }
+
+    @GetMapping("/api/admin/business-error")
+    public Envelope<BusinessErrorMode> businessError() {
+        return Envelope.ok(payments.businessError());
+    }
+
+    @PutMapping("/api/admin/business-error")
+    public Envelope<BusinessErrorMode> setBusinessError(@RequestBody BusinessErrorRequest req) {
+        return Envelope.ok(payments.setBusinessError(new BusinessErrorMode(req.code(), req.percent(), req.until())));
     }
 
     @Transactional
