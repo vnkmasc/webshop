@@ -19,7 +19,7 @@ public class SimulationController {
 
     private final SimulationService simulation;
 
-    public record Status(List<SimulationService.ScenarioState> scenarios, int retainedMb) {
+    public record Status(List<SimulationService.ScenarioState> scenarios, int retainedMb, int taggedSeries) {
     }
 
     public record ScenarioUpdate(boolean active, Map<String, Object> params, Integer durationMinutes) {
@@ -37,7 +37,7 @@ public class SimulationController {
     @GetMapping("/api/admin/simulation")
     public ApiResponse<Status> status() {
         requireEnabled();
-        return ApiResponse.ok(new Status(simulation.list(), simulation.retainedMb()));
+        return ApiResponse.ok(new Status(simulation.list(), simulation.retainedMb(), simulation.taggedSeries()));
     }
 
     @PutMapping("/api/admin/simulation/{scenario}")

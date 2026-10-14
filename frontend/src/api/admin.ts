@@ -75,7 +75,7 @@ export const adminApi = {
   updateCoupon: (id: number, body: CouponInput) => putData<Coupon>(`/admin/coupons/${id}`, body),
   gateway: () => getData<GatewaySettings>('/admin/payment-gateway'),
   updateGateway: (body: GatewaySettings) => putData<GatewaySettings>('/admin/payment-gateway', body),
-  simulation: () => getData<{ scenarios: ScenarioState[]; retainedMb: number }>('/admin/simulation'),
+  simulation: () => getData<{ scenarios: ScenarioState[]; retainedMb: number; taggedSeries: number }>('/admin/simulation'),
   setScenario: (scenario: string, body: { active: boolean; params?: Record<string, unknown>; durationMinutes?: number }) =>
     putData<ScenarioState>(`/admin/simulation/${scenario}`, body),
   releaseMemory: () => postData<number>('/admin/simulation/release-memory'),

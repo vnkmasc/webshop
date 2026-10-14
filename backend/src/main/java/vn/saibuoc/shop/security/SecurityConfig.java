@@ -37,8 +37,9 @@ public class SecurityConfig {
                 .logout(AbstractHttpConfigurer::disable)
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
-                        // Health/info probes on the management port (firewalled to the admin network).
-                        .requestMatchers(EndpointRequest.to("health", "info")).permitAll()
+                        // Probes and the Prometheus scrape endpoint on the management port (firewalled to the admin
+                        // network): scrapers and load balancers carry no user token.
+                        .requestMatchers(EndpointRequest.to("health", "info", "prometheus")).permitAll()
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")
                         .requestMatchers("/api/account/**").authenticated()
                         .requestMatchers(HttpMethod.GET, "/api/auth/me").authenticated()

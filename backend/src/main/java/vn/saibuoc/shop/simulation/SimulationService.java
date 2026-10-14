@@ -7,7 +7,12 @@ import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.atomic.AtomicInteger;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.Meter;
+import io.micrometer.core.instrument.MeterRegistry;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
@@ -58,8 +63,16 @@ public class SimulationService {
          * Card checkouts attach fake sensitive data (public test card, demo e-mail, CVV 000) to the gateway call
          * (query string and headers) and to the log, to demonstrate masking. Never real customer data.
          */
-        EMIT_PII
+        EMIT_PII,
+        /**
+         * A counter gets a tag whose value is unique per request, exploding the number of metric series.
+         * Hard cap MAX_TAGGED_SERIES; all series are removed when the scenario ends. params: perRequest, maxSeries
+         */
+        METRIC_CARDINALITY
     }
+
+    public static final String TAGGED_METRIC = "shop.request.tagged";
+    public static final int MAX_TAGGED_SERIES = 5000;
 
     /** Fixed fake values used by EMIT_PII. */
     public static final String PII_EMAIL = "demo@example.com";
@@ -108,6 +121,8 @@ public class SimulationService {
     private final JdbcTemplate jdbc;
     private final Clock clock;
     private final PaymentClient paymentClient;
+    private final MeterRegistry meters;
+    private final AtomicInteger taggedSeries = new AtomicInteger();
 
     private final Map<Scenario, ScenarioState> states = new EnumMap<>(Scenario.class);
     private final List<byte[]> retained = new ArrayList<>();
@@ -131,6 +146,9 @@ public class SimulationService {
         if (scenario == Scenario.PAYMENT_BUSINESS_ERROR) {
             pushBusinessError(state);
         }
+        if (scenario == Scenario.METRIC_CARDINALITY) {
+            clearTaggedSeries();
+        }
         if (scenario == Scenario.ODD_STATUS && !ODD_STATUSES.containsKey(intParam(state, "code", 423))) {
             throw BusinessException.badRequest("BAD_CODE", "Mã HTTP phải là một trong " + ODD_STATUSES.keySet());
         }
@@ -143,6 +161,9 @@ public class SimulationService {
         states.remove(scenario);
         if (scenario == Scenario.PAYMENT_BUSINESS_ERROR) {
             clearBusinessError();
+        }
+        if (scenario == Scenario.METRIC_CARDINALITY) {
+            clearTaggedSeries();
         }
         if (scenario == Scenario.MEMORY_LEAK) {
             retained.clear();
@@ -168,6 +189,9 @@ public class SimulationService {
             if (s == Scenario.MEMORY_LEAK) {
                 retained.clear();
             }
+            if (s == Scenario.METRIC_CARDINALITY) {
+                clearTaggedSeries();
+            }
             log.warn("Simulation scenario {} expired", s);
             st = null;
         }
@@ -180,6 +204,37 @@ public class SimulationService {
         }
         ScenarioState st = current(s);
         return st.active() ? st : null;
+    }
+
+    // ------------------------------------------------------------------ metric cardinality
+
+    public int taggedSeries() {
+        return taggedSeries.get();
+    }
+
+    private void addTaggedSeries(ScenarioState st) {
+        int perRequest = Math.min(Math.max(intParam(st, "perRequest", 10), 1), 50);
+        int cap = Math.min(Math.max(intParam(st, "maxSeries", MAX_TAGGED_SERIES), 1), MAX_TAGGED_SERIES);
+        for (int i = 0; i < perRequest; i++) {
+            if (taggedSeries.incrementAndGet() > cap) {
+                taggedSeries.decrementAndGet();
+                return;
+            }
+            Counter.builder(TAGGED_METRIC).description("Requests tagged with a unique reference (cardinality demo)")
+                    .tag("request_ref", UUID.randomUUID().toString()).register(meters).increment();
+        }
+    }
+
+    private void clearTaggedSeries() {
+        int n = 0;
+        for (Meter m : meters.find(TAGGED_METRIC).meters()) {
+            meters.remove(m);
+            n++;
+        }
+        taggedSeries.set(0);
+        if (n > 0) {
+            log.warn("Removed {} series of {}", n, TAGGED_METRIC);
+        }
     }
 
     // ------------------------------------------------------------------ payment gateway business-error mode
@@ -231,6 +286,10 @@ public class SimulationService {
         ScenarioState pool = active(Scenario.POOL_EXHAUSTION);
         if (pool != null && target(pool).matches(path) && hit(intParam(pool, "ratePercent", 50))) {
             jdbc.queryForObject("select pg_sleep(?)", Object.class, intParam(pool, "holdMs", 5000) / 1000.0);
+        }
+        ScenarioState cardinality = active(Scenario.METRIC_CARDINALITY);
+        if (cardinality != null) {
+            addTaggedSeries(cardinality);
         }
         ScenarioState memory = active(Scenario.MEMORY_LEAK);
         if (memory != null) {

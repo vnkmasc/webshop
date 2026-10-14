@@ -55,6 +55,9 @@ const SCENARIOS: Record<string, { title: string; effect: string; fields: Field[]
     { name: 'target', label: 'Nhóm API', kind: 'target', def: 'CHECKOUT' },
     { name: 'percent', label: 'Tỷ lệ (%)', kind: 'number', def: 40, max: 100 }] },
   EMIT_PII: { title: 'Lộ dữ liệu nhạy cảm (giả)', effect: 'Thanh toán thẻ đính email, số thẻ, CVV giả (4111…, demo@example.com, 000) vào URL, header và log để thử tính năng che dữ liệu.', fields: [] },
+  METRIC_CARDINALITY: { title: 'Nổ cardinality metric', effect: 'Counter shop.request.tagged gắn tag duy nhất theo từng request; số series tăng vọt rồi dừng ở ngưỡng (tối đa 5.000), tắt thì xoá hết.', fields: [
+    { name: 'perRequest', label: 'Series mỗi request', kind: 'number', def: 10, max: 50 },
+    { name: 'maxSeries', label: 'Ngưỡng (tối đa 5000)', kind: 'number', def: 5000, max: 5000 }] },
   READINESS_FAIL: { title: 'Readiness hỏng', effect: '/actuator/health/readiness báo DOWN (liveness vẫn UP); bộ cân bằng tải ngừng gửi request tới backend.', fields: [] },
 };
 
@@ -118,7 +121,12 @@ export default function SimulationPage() {
     <>
       <Alert type="warning" showIcon style={{ marginBottom: 16 }}
         message="Chỉ dùng trên môi trường thử nghiệm. Mỗi kịch bản tự tắt khi hết thời gian; không kịch bản nào sửa dữ liệu bán hàng."
-        action={<Button size="small" onClick={() => release.mutate()} loading={release.isPending}>Giải phóng bộ nhớ ({data?.retainedMb ?? 0} MB)</Button>} />
+        action={(
+          <Space>
+            <span>Series metric: {data?.taggedSeries ?? 0}</span>
+            <Button size="small" onClick={() => release.mutate()} loading={release.isPending}>Giải phóng bộ nhớ ({data?.retainedMb ?? 0} MB)</Button>
+          </Space>
+        )} />
       <Row gutter={[16, 16]}>
         {(data?.scenarios ?? []).map((s) => (
           <Col xs={24} md={12} xl={6} key={s.scenario}>
