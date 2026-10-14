@@ -48,6 +48,12 @@ const SCENARIOS: Record<string, { title: string; effect: string; fields: Field[]
     { name: 'code', label: 'Mã phản hồi', kind: 'select', def: '99', options: [
       { value: '99', label: '99 - Core bận' }, { value: '68', label: '68 - Tài khoản không đủ điều kiện' }, { value: '12', label: '12 - Sai định dạng' }] },
     { name: 'percent', label: 'Tỷ lệ (%)', kind: 'number', def: 40, max: 100 }] },
+  ODD_STATUS: { title: 'Mã HTTP lạ', effect: 'Một tỷ lệ request trả 423/402/451/429 kèm body JSON giải thích (423, 429 có Retry-After).', fields: [
+    { name: 'code', label: 'Mã HTTP', kind: 'select', def: 423, options: [
+      { value: 423, label: '423 - Tài khoản bị khoá' }, { value: 402, label: '402 - Cần thanh toán' },
+      { value: 451, label: '451 - Giữ theo yêu cầu pháp lý' }, { value: 429, label: '429 - Quá nhiều yêu cầu' }] },
+    { name: 'target', label: 'Nhóm API', kind: 'target', def: 'CHECKOUT' },
+    { name: 'percent', label: 'Tỷ lệ (%)', kind: 'number', def: 40, max: 100 }] },
 };
 
 function ScenarioCard({ s, onChange, busy }: { s: ScenarioState; onChange: (active: boolean, params?: Record<string, unknown>, minutes?: number) => void; busy: boolean }) {

@@ -49,8 +49,17 @@ public class SimulationService {
          * The payment gateway answers HTTP 200 with a business responseCode other than "00" (core-banking style).
          * params: code (99 | 68 | 12), percent
          */
-        PAYMENT_BUSINESS_ERROR
+        PAYMENT_BUSINESS_ERROR,
+        /** A share of requests answer with an uncommon HTTP status (423, 402, 451, 429). params: code, percent, target */
+        ODD_STATUS
     }
+
+    /** Statuses ODD_STATUS can answer with: HTTP status -> {error, message}. */
+    public static final Map<Integer, String[]> ODD_STATUSES = Map.of(
+            423, new String[]{"ACCOUNT_LOCKED", "Tài khoản đang bị khoá do rà soát gian lận"},
+            402, new String[]{"PAYMENT_REQUIRED", "Cần thanh toán trước khi tiếp tục"},
+            451, new String[]{"LEGAL_HOLD", "Đơn hàng bị giữ theo yêu cầu pháp lý"},
+            429, new String[]{"TOO_MANY_REQUESTS", "Quá nhiều yêu cầu, vui lòng thử lại sau"});
 
     /** Business response codes the gateway can return in PAYMENT_BUSINESS_ERROR. */
     public static final java.util.Set<String> BUSINESS_CODES = java.util.Set.of("99", "68", "12");
@@ -109,6 +118,9 @@ public class SimulationService {
                 clock.instant().plus(Duration.ofMinutes(minutes)));
         if (scenario == Scenario.PAYMENT_BUSINESS_ERROR) {
             pushBusinessError(state);
+        }
+        if (scenario == Scenario.ODD_STATUS && !ODD_STATUSES.containsKey(intParam(state, "code", 423))) {
+            throw BusinessException.badRequest("BAD_CODE", "Mã HTTP phải là một trong " + ODD_STATUSES.keySet());
         }
         states.put(scenario, state);
         log.warn("Simulation scenario {} activated by {} for {} min params={}", scenario, by, minutes, state.params());
@@ -212,6 +224,12 @@ public class SimulationService {
         if (memory != null) {
             retain(intParam(memory, "kbPerRequest", 512), intParam(memory, "capMb", 256));
         }
+        ScenarioState odd = active(Scenario.ODD_STATUS);
+        if (odd != null && target(odd).matches(path) && hit(intParam(odd, "percent", 40))) {
+            int code = intParam(odd, "code", 423);
+            String[] em = ODD_STATUSES.getOrDefault(code, ODD_STATUSES.get(423));
+            throw new OddStatusException(ODD_STATUSES.containsKey(code) ? code : 423, em[0], em[1]);
+        }
         ScenarioState error = active(Scenario.HTTP_ERROR);
         if (error != null && target(error).matches(path) && hit(intParam(error, "ratePercent", 20))) {
             throw new SimulatedFailureException("Simulated failure while processing " + path);
@@ -287,6 +305,19 @@ public class SimulationService {
             Thread.sleep(ms);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
+        }
+    }
+
+    /** Thrown on purpose by ODD_STATUS; answered with that status, a JSON error body and Retry-After for 423/429. */
+    @lombok.Getter
+    public static class OddStatusException extends RuntimeException {
+        private final int status;
+        private final String error;
+
+        public OddStatusException(int status, String error, String message) {
+            super(message);
+            this.status = status;
+            this.error = error;
         }
     }
 

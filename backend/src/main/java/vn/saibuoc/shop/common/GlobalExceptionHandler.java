@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
+import vn.saibuoc.shop.simulation.SimulationService;
 
 @Slf4j
 @RestControllerAdvice
@@ -80,6 +81,22 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> method(HttpRequestMethodNotSupportedException ex) {
         return ResponseEntity.status(HttpStatus.METHOD_NOT_ALLOWED)
                 .body(ErrorResponse.of("METHOD_NOT_ALLOWED", "Phương thức không được hỗ trợ"));
+    }
+
+    /** Fault-injection ODD_STATUS: uncommon status codes with a readable body. */
+    @ExceptionHandler(SimulationService.OddStatusException.class)
+    public ResponseEntity<java.util.Map<String, Object>> oddStatus(SimulationService.OddStatusException ex) {
+        log.warn("Simulated status {} {}", ex.getStatus(), ex.getError());
+        var body = new java.util.LinkedHashMap<String, Object>();
+        body.put("success", false);
+        body.put("error", ex.getError());
+        body.put("errorCode", ex.getError());
+        body.put("message", ex.getMessage());
+        var res = ResponseEntity.status(ex.getStatus());
+        if (ex.getStatus() == 423 || ex.getStatus() == 429) {
+            res.header("Retry-After", "30");
+        }
+        return res.body(body);
     }
 
     @ExceptionHandler(Exception.class)
