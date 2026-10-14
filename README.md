@@ -94,6 +94,11 @@ Khi `APP_SIMULATION_ENABLED=true`, quản trị viên bật/tắt các kịch b�
 | `HIGH_CPU` | Trang sản phẩm tốn CPU khi tính gợi ý (`cpuMs`) |
 | `MEMORY_LEAK` | Mỗi request giữ lại bộ nhớ, có giới hạn (`kbPerRequest`, `capMb`) |
 | `FRONTEND_ERROR` | Nút "Thêm vào giỏ" ném `TypeError` trong trình duyệt |
+| `PAYMENT_BUSINESS_ERROR` | Cổng thanh toán trả HTTP 200 với `responseCode` khác `00` trong body và header `X-Response-Code` (`code` 99/68/12, `percent`); backend coi là thanh toán thất bại |
+| `ODD_STATUS` | Một tỷ lệ request trả 423/402/451/429 kèm body `error`, `message`; 423 và 429 có `Retry-After: 30` (`code`, `percent`, `target`) |
+| `READINESS_FAIL` | `/actuator/health/readiness` báo DOWN, liveness vẫn UP |
+| `EMIT_PII` | Thanh toán thẻ đính dữ liệu giả cố định (thẻ test `4111111111111111`, `demo@example.com`, CVV `000`) vào URL, header của lệnh gọi sang payment và vào log |
+| `METRIC_CARDINALITY` | Counter `shop.request.tagged` có tag duy nhất theo request, tối đa 5.000 series, xoá hết khi tắt (`perRequest`, `maxSeries`) |
 
 Nhóm API (`target`): `ALL`, `CATALOG`, `CART`, `CHECKOUT`, `ACCOUNT`, `ADMIN`.
 
@@ -107,8 +112,9 @@ GET  /api/admin/payment-gateway        PUT cùng đường dẫn để đổi h�
 ## Quan sát
 
 - Mọi response có `X-Request-Id`; backend chuyển tiếp header này sang payment. Log có `requestId`.
-- Actuator: `/actuator/health` (kèm `liveness`, `readiness`), `/actuator/info`, `/actuator/metrics`, `/actuator/prometheus`.
-- Metric nghiệp vụ: `shop.orders.placed{payment}`, `shop.order.value`, `shop.payments{result}`, `gateway.charges{result}`, `gateway.charge.duration`.
+- Actuator (cổng quản trị): `/actuator/health` (kèm `liveness`, `readiness`), `/actuator/info`, `/actuator/prometheus` không cần đăng nhập; `/actuator/metrics` cần token quản trị.
+- Payment: mọi kết quả charge có `responseCode` (`00` = đã xử lý) trong body và header `X-Response-Code`.
+- Metric nghiệp vụ: `shop.orders.placed{payment}`, `shop.order.value`, `shop.payments{result}` (`approved`, `declined`, `business_error`, `gateway_error`), `gateway.charges{result}`, `gateway.charge.duration`.
 
 ## Build và chạy
 
