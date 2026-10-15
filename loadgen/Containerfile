@@ -1,0 +1,11 @@
+# Load generator image: the k6 runtime plus the shop load profile.
+#   docker build -t shop-loadgen:<tag> -f loadgen/Containerfile loadgen
+# Configuration is environment variables (see README.md); BASE_URL and ADMIN_PASSWORD are required.
+FROM docker.io/grafana/k6:2.3.0
+
+LABEL org.opencontainers.image.title="shop-loadgen" \
+      org.opencontainers.image.description="Sai Buoc load generator (k6)"
+
+COPY shop.js /scripts/shop.js
+ENV PROFILE=steady VUS=1 DURATION=8760h BUY_PERCENT=2 ORDERS_PER_MIN=1
+ENTRYPOINT ["k6", "run", "--quiet", "/scripts/shop.js"]

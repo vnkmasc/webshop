@@ -1,6 +1,6 @@
 # Sải Bước - cửa hàng giày trực tuyến
 
-Ứng dụng web bán giày gồm trang mua sắm cho khách, trang quản trị cho cửa hàng, một dịch vụ cổng thanh toán thẻ giả lập (Java) và một dịch vụ chấm điểm rủi ro đơn hàng (Python). Repo này chỉ chứa **mã nguồn ứng dụng**; cách triển khai lên từng loại hạ tầng, tải giả lập và kịch bản demo nằm ở repo `webshop-demo`.
+Ứng dụng web bán giày gồm trang mua sắm cho khách, trang quản trị cho cửa hàng, một dịch vụ cổng thanh toán thẻ giả lập (Java) và một dịch vụ chấm điểm rủi ro đơn hàng (Python). Repo này chứa mã nguồn ứng dụng, tải giả lập (`loadgen/`) và cách build image container; cách triển khai lên từng môi trường cụ thể và kịch bản demo nằm ở repo `webshop-demo`.
 
 ## Kiến trúc
 
@@ -19,6 +19,7 @@ Sau khi đặt hàng thành công, backend gửi sự kiện `ORDER_PLACED` (kh�
 | `backend/` | Spring Boot 3.4, Java 21, JPA + JDBC, Flyway, JWT | 8080 (API), 8081 (actuator) | Database `shop` |
 | `payment/` | Spring Boot 3.4, Java 21, JDBC, Flyway | 8090 (API + actuator) | Database `payments`; có `Containerfile` |
 | `risk/` | Python 3.11, FastAPI | 8095 | Không database; phụ trợ: không phản hồi thì đơn vẫn đặt được. Xem [risk/README.md](risk/README.md) |
+| `loadgen/` | k6 | - | Tải giả lập; có `Containerfile` và manifest Kubernetes. Xem [loadgen/README.md](loadgen/README.md) |
 | PostgreSQL | 16 | 5432 | Hai database riêng; bảng do Flyway tạo khi khởi động |
 | Kafka | 3.x / 4.x (KRaft) | 9092 | Tùy chọn. Topic `orders` (3 partition) do backend tự tạo |
 
@@ -147,5 +148,21 @@ docker build -t shop-payment:dev -f payment/Containerfile payment/target
 (cd backend && DB_PASSWORD=... JWT_SECRET=$(openssl rand -base64 48) ./mvnw spring-boot:run)
 (cd frontend && VITE_DEV_PROXY_TARGET=http://localhost:8080 npm run dev)
 ```
+
+## Image container
+
+| Image | Build từ | Ghi chú |
+|---|---|---|
+| `shop-payment` | `payment/Containerfile`, context `payment/target` | Cần build jar trước |
+| `shop-risk` | `risk/Containerfile`, context `risk/` | Chạy unit test lúc build |
+| `shop-loadgen` | `loadgen/Containerfile`, context `loadgen/` | k6 + kịch bản tải |
+
+```bash
+scripts/build-images.sh                                     # build cả ba, tag theo commit và latest
+scripts/build-images.sh -p registry.example.com/shop        # build và đẩy lên registry (đăng nhập trước)
+scripts/build-images.sh -p registry.example.com/shop risk   # chỉ một image
+```
+
+Dùng podman, không có thì dùng docker. Thư mục làm việc còn thay đổi chưa commit thì tag có hậu tố `-dirty`. Backend và frontend chưa có image: backend chạy bằng jar, frontend là file tĩnh.
 
 Ảnh sản phẩm (`frontend/public/images/shoes/*.svg`) được sinh bởi `node scripts/gen-shoe-images.mjs`.
