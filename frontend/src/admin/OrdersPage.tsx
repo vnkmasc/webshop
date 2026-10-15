@@ -8,7 +8,7 @@ import { errorMessage } from '@/api/client';
 import type { OrderStatus } from '@/api/types';
 import { OrderView } from '@/shop/components/OrderView';
 import { dateTime, money } from '@/utils/format';
-import { ORDER_STATUS, PAYMENT_STATUS, RISK_LEVEL } from '@/utils/labels';
+import { FULFILLMENT, ORDER_STATUS, PAYMENT_STATUS, RISK_LEVEL } from '@/utils/labels';
 
 const ACTION_LABEL: Partial<Record<OrderStatus, string>> = {
   CONFIRMED: 'Xác nhận đơn', SHIPPING: 'Giao cho vận chuyển', DELIVERED: 'Đã giao thành công', CANCELLED: 'Hủy đơn',
@@ -18,7 +18,7 @@ export default function OrdersPage() {
   const { message, modal } = App.useApp();
   const queryClient = useQueryClient();
   const [params, setParams] = useSearchParams();
-  const [filters, setFilters] = useState({ status: params.get('status') ?? '', q: '', payment: '', risk: '', page: 0, size: 20,
+  const [filters, setFilters] = useState({ status: params.get('status') ?? '', q: '', payment: '', risk: '', fulfillment: '', page: 0, size: 20,
     from: undefined as string | undefined, to: undefined as string | undefined });
   const openCode = params.get('code');
 
@@ -83,6 +83,8 @@ export default function OrdersPage() {
         <Select style={{ width: 200 }} value={filters.risk} onChange={(risk) => setFilters({ ...filters, risk, page: 0 })}
           options={[{ value: '', label: 'Mọi mức rủi ro' }, { value: 'HIGH', label: 'Rủi ro cao (cần kiểm tra)' },
             { value: 'MEDIUM', label: 'Rủi ro trung bình' }, { value: 'LOW', label: 'Rủi ro thấp' }]} />
+        <Select style={{ width: 200 }} value={filters.fulfillment} onChange={(fulfillment) => setFilters({ ...filters, fulfillment, page: 0 })}
+          options={[{ value: '', label: 'Mọi trạng thái kho' }, ...Object.entries(FULFILLMENT).map(([value, f]) => ({ value, label: f.label }))]} />
         <DatePicker.RangePicker format="DD/MM/YYYY" onChange={(r) => setFilters({ ...filters, page: 0,
           from: (r?.[0] as Dayjs | null)?.format('YYYY-MM-DD'), to: (r?.[1] as Dayjs | null)?.format('YYYY-MM-DD') })} />
       </Space>
@@ -101,6 +103,9 @@ export default function OrdersPage() {
           { title: 'Trạng thái', dataIndex: 'status', render: (s: OrderStatus) => <Tag color={ORDER_STATUS[s].color}>{ORDER_STATUS[s].label}</Tag> },
           { title: 'Rủi ro', dataIndex: 'riskLevel', render: (l: string | null, r) => (l
             ? <Tag color={RISK_LEVEL[l].color}>{l === 'HIGH' ? 'Cần kiểm tra' : RISK_LEVEL[l].label.replace('Rủi ro ', '')} · {r.riskScore}</Tag>
+            : <span style={{ color: '#bbb' }}>-</span>) },
+          { title: 'Kho', dataIndex: 'fulfillmentStatus', render: (f: string | null) => (f
+            ? <Tag color={FULFILLMENT[f].color}>{FULFILLMENT[f].label}</Tag>
             : <span style={{ color: '#bbb' }}>-</span>) },
         ]} />
       <Drawer open={!!openCode} onClose={() => setOpen(null)} width={760} title={`Đơn hàng ${openCode ?? ''}`}

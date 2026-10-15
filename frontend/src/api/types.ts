@@ -166,9 +166,14 @@ export interface Order {
   riskScore?: number | null;
   riskLevel?: RiskLevel | null;
   riskReasons?: string[] | null;
+  fulfillmentStatus?: FulfillmentStatus | null;
+  fulfillmentAt?: string | null;
 }
 
 export type RiskLevel = 'LOW' | 'MEDIUM' | 'HIGH';
+
+/** Hand-over to the warehouse through the order queue. */
+export type FulfillmentStatus = 'QUEUED' | 'RECEIVED' | 'SEND_FAILED';
 
 export interface OrderSummary {
   code: string;

@@ -87,8 +87,9 @@ public class AdminController {
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
             @RequestParam(required = false) String payment, @RequestParam(required = false) String risk,
+            @RequestParam(required = false) String fulfillment,
             @RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "20") int size) {
-        return ApiResponse.ok(queries.orders(status, q, from, to, payment, risk, page, size));
+        return ApiResponse.ok(queries.orders(status, q, from, to, payment, risk, fulfillment, page, size));
     }
 
     @GetMapping("/orders/status-counts")

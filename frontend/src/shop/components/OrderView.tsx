@@ -1,7 +1,7 @@
 import { Descriptions, Space, Table, Tag, Timeline } from 'antd';
 import type { Order } from '@/api/types';
 import { dateTime, money } from '@/utils/format';
-import { ORDER_STATUS, PAYMENT_METHOD, PAYMENT_STATUS, RISK_LEVEL, RISK_REASON } from '@/utils/labels';
+import { FULFILLMENT, ORDER_STATUS, PAYMENT_METHOD, PAYMENT_STATUS, RISK_LEVEL, RISK_REASON } from '@/utils/labels';
 
 export function StatusTags({ order }: { order: Pick<Order, 'status' | 'paymentStatus'> }) {
   return (
@@ -28,6 +28,12 @@ export function OrderView({ order, showHistory = true }: { order: Order; showHis
           <Descriptions.Item label="Chấm điểm rủi ro" span={2}>
             <Tag color={RISK_LEVEL[order.riskLevel].color}>{RISK_LEVEL[order.riskLevel].label}</Tag> {order.riskScore} điểm
             {order.riskReasons?.length ? <> · {order.riskReasons.map((r) => RISK_REASON[r] ?? r).join(', ')}</> : null}
+          </Descriptions.Item>
+        )}
+        {order.fulfillmentStatus && (
+          <Descriptions.Item label="Kho" span={2}>
+            <Tag color={FULFILLMENT[order.fulfillmentStatus].color}>{FULFILLMENT[order.fulfillmentStatus].label}</Tag>
+            {order.fulfillmentAt && <> lúc {dateTime(order.fulfillmentAt)}</>}
           </Descriptions.Item>
         )}
       </Descriptions>

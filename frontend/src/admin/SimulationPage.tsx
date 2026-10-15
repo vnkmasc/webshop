@@ -64,7 +64,10 @@ const SCENARIOS: Record<string, { title: string; effect: string; fields: Field[]
     { name: 'percent', label: 'Tỷ lệ (%)', kind: 'number', def: 30, max: 100 }] },
   RISK_TIMEOUT: { title: 'Dịch vụ rủi ro quá thời gian chờ', effect: 'Dịch vụ chấm điểm trả lời sau thời gian chờ 3 giây của backend; đơn vẫn đặt được, chậm thêm ~3 giây.', fields: [
     { name: 'delayMs', label: 'Độ trễ (ms)', kind: 'number', def: 5000, max: 30000 }] },
-  READINESS_FAIL: { title: 'Readiness hỏng', effect: '/actuator/health/readiness báo DOWN (liveness vẫn UP); bộ cân bằng tải ngừng gửi request tới backend.', fields: [] },
+  READINESS_FAIL: { title: 'Readiness hỏng', effect: '/actuator/health/readiness báo DOWN (liveness vẫn UP); shop vẫn phục vụ, chỉ thứ theo dõi endpoint này mới thấy.', fields: [] },
+  KAFKA_SLOW_CONSUMER: { title: 'Hàng đợi xử lý chậm', effect: 'Bên kho đọc hàng đợi orders chậm thêm N ms mỗi đơn; lag dồn dần (cần đủ đơn mới), tắt thì rút về 0.', fields: [
+    { name: 'delayMs', label: 'Chậm mỗi đơn (ms)', kind: 'number', def: 15000, max: 20000 }] },
+  KAFKA_CONSUMER_DEAD: { title: 'Consumer hàng đợi chết', effect: 'Bên kho ngừng đọc hàng đợi (consumer group không còn thành viên) trong khi đơn vẫn được gửi vào; lag tăng đều.', fields: [] },
 };
 
 function ScenarioCard({ s, onChange, busy }: { s: ScenarioState; onChange: (active: boolean, params?: Record<string, unknown>, minutes?: number) => void; busy: boolean }) {
@@ -129,6 +132,10 @@ export default function SimulationPage() {
         message="Chỉ dùng trên môi trường thử nghiệm. Mỗi kịch bản tự tắt khi hết thời gian; không kịch bản nào sửa dữ liệu bán hàng."
         action={(
           <Space>
+            {data?.queue && (data.queue.error
+              ? <Tag color="red">Hàng đợi: không đo được</Tag>
+              : <Tag color={(data.queue.lag ?? 0) > 0 || data.queue.consumers === 0 ? 'orange' : 'green'}>
+                Hàng đợi {data.queue.topic}: lag {data.queue.lag} · consumer {data.queue.consumers}</Tag>)}
             <span>Series metric: {data?.taggedSeries ?? 0}</span>
             <Button size="small" onClick={() => release.mutate()} loading={release.isPending}>Giải phóng bộ nhớ ({data?.retainedMb ?? 0} MB)</Button>
           </Space>

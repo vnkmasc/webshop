@@ -99,6 +99,13 @@ public class Order {
     @Column(name = "risk_reasons")
     private String riskReasons;
 
+    /** Hand-over to the warehouse through the order event queue: QUEUED, RECEIVED or SEND_FAILED; null without a queue. */
+    @Column(name = "fulfillment_status")
+    private String fulfillmentStatus;
+
+    @Column(name = "fulfillment_at")
+    private Instant fulfillmentAt;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 

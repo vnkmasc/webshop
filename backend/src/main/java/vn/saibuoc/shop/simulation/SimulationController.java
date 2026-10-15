@@ -3,6 +3,7 @@ package vn.saibuoc.shop.simulation;
 import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -11,6 +12,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 import vn.saibuoc.shop.common.ApiResponse;
 import vn.saibuoc.shop.common.BusinessException;
+import vn.saibuoc.shop.events.OrderQueueMonitor;
 import vn.saibuoc.shop.security.SecurityUtils;
 
 @RestController
@@ -18,8 +20,11 @@ import vn.saibuoc.shop.security.SecurityUtils;
 public class SimulationController {
 
     private final SimulationService simulation;
+    private final ObjectProvider<OrderQueueMonitor> queue;
 
-    public record Status(List<SimulationService.ScenarioState> scenarios, int retainedMb, int taggedSeries) {
+    /** queue is null when the order queue is not configured. */
+    public record Status(List<SimulationService.ScenarioState> scenarios, int retainedMb, int taggedSeries,
+                         OrderQueueMonitor.Snapshot queue) {
     }
 
     public record ScenarioUpdate(boolean active, Map<String, Object> params, Integer durationMinutes) {
@@ -37,7 +42,8 @@ public class SimulationController {
     @GetMapping("/api/admin/simulation")
     public ApiResponse<Status> status() {
         requireEnabled();
-        return ApiResponse.ok(new Status(simulation.list(), simulation.retainedMb(), simulation.taggedSeries()));
+        return ApiResponse.ok(new Status(simulation.list(), simulation.retainedMb(), simulation.taggedSeries(),
+                queue.getIfAvailable() == null ? null : queue.getObject().snapshot()));
     }
 
     @PutMapping("/api/admin/simulation/{scenario}")

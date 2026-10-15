@@ -75,8 +75,16 @@ public class SimulationService {
         /** A share of risk scoring calls fail with 500 (params: percent, default 30); orders still go through. */
         RISK_ERROR,
         /** The risk service answers after the backend timeout (params: delayMs, default 5000; timeout 3 s). */
-        RISK_TIMEOUT
+        RISK_TIMEOUT,
+        /** The order queue consumer takes N ms longer per message (params: delayMs, default 5000, max 20000). */
+        KAFKA_SLOW_CONSUMER,
+        /** The order queue consumer stops (leaves its group) while orders keep being published. */
+        KAFKA_CONSUMER_DEAD
     }
+
+    private static final java.util.Set<Scenario> QUEUE_SCENARIOS = java.util.EnumSet.of(Scenario.KAFKA_SLOW_CONSUMER,
+            Scenario.KAFKA_CONSUMER_DEAD);
+    public static final int MAX_CONSUMER_DELAY_MS = 20000;
 
     private static final java.util.Set<Scenario> RISK_SCENARIOS = java.util.EnumSet.of(Scenario.RISK_SLOW,
             Scenario.RISK_ERROR, Scenario.RISK_TIMEOUT);
@@ -162,6 +170,9 @@ public class SimulationService {
         }
         if (RISK_SCENARIOS.contains(scenario)) {
             pushRiskScenario(scenario, true, state);
+        }
+        if (QUEUE_SCENARIOS.contains(scenario) && (props.events() == null || !props.events().enabled())) {
+            throw BusinessException.badRequest("QUEUE_DISABLED", "Hàng đợi đơn hàng chưa được cấu hình (APP_KAFKA_BOOTSTRAP)");
         }
         if (scenario == Scenario.ODD_STATUS && !ODD_STATUSES.containsKey(intParam(state, "code", 423))) {
             throw BusinessException.badRequest("BAD_CODE", "Mã HTTP phải là một trong " + ODD_STATUSES.keySet());
@@ -377,6 +388,16 @@ public class SimulationService {
 
     public boolean emitPiiActive() {
         return active(Scenario.EMIT_PII) != null;
+    }
+
+    /** Extra processing time per queue message (KAFKA_SLOW_CONSUMER), 0 when off. */
+    public long slowConsumerDelayMs() {
+        ScenarioState st = active(Scenario.KAFKA_SLOW_CONSUMER);
+        return st == null ? 0 : Math.min(Math.max(intParam(st, "delayMs", 5000), 0), MAX_CONSUMER_DELAY_MS);
+    }
+
+    public boolean consumerDeadActive() {
+        return active(Scenario.KAFKA_CONSUMER_DEAD) != null;
     }
 
     public boolean readinessFailActive() {

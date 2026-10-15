@@ -24,6 +24,21 @@ spring:
   flyway:
     enabled: true
     locations: classpath:db/migration
+  kafka:
+    bootstrap-servers: ${APP_KAFKA_BOOTSTRAP:localhost:9092}
+    client-id: shop-backend
+    producer:
+      properties:
+        # Checkout must not hang when the broker is down: give up on metadata after 3 s.
+        max.block.ms: 3000
+        request.timeout.ms: 5000
+        delivery.timeout.ms: 10000
+    consumer:
+      group-id: ${APP_KAFKA_GROUP:shop-warehouse}
+      auto-offset-reset: earliest
+      max-poll-records: 5
+    listener:
+      ack-mode: record
   jackson:
     serialization:
       write-dates-as-timestamps: false
@@ -86,6 +101,10 @@ app:
     url: ${APP_RISK_URL:}
     api-key: ${RISK_API_KEY:}
     timeout: ${RISK_TIMEOUT:PT3S}
+  events:
+    bootstrap: ${APP_KAFKA_BOOTSTRAP:}
+    topic: ${APP_KAFKA_TOPIC:orders}
+    group: ${APP_KAFKA_GROUP:shop-warehouse}
 
 logging:
   pattern:

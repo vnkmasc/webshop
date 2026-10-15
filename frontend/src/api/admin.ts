@@ -1,5 +1,5 @@
 import { getData, postData, putData } from './client';
-import type { Order, OrderStatus, Page } from './types';
+import type { FulfillmentStatus, Order, OrderStatus, Page } from './types';
 
 export interface Dashboard {
   days: number;
@@ -30,10 +30,17 @@ export interface AdminProduct {
 
 export type ProductInput = Omit<AdminProduct, 'id' | 'slug' | 'soldCount' | 'createdAt' | 'variants'>;
 
+/** Order queue measured from the broker; lag/consumers are null when it cannot be reached (error set). */
+export interface QueueStatus {
+  topic: string; group: string; lag: number | null; consumers: number | null; lagByPartition: Record<string, number>;
+  at: string | null; error: string | null;
+}
+
 export interface OrderRow {
   code: string; customerName: string; phone: string; province: string; total: number; status: OrderStatus;
   paymentMethod: string; paymentStatus: string; itemCount: number; couponCode: string | null; createdAt: string;
   riskLevel: 'LOW' | 'MEDIUM' | 'HIGH' | null; riskScore: number | null;
+  fulfillmentStatus: FulfillmentStatus | null;
 }
 
 export interface CustomerRow {
@@ -76,7 +83,7 @@ export const adminApi = {
   updateCoupon: (id: number, body: CouponInput) => putData<Coupon>(`/admin/coupons/${id}`, body),
   gateway: () => getData<GatewaySettings>('/admin/payment-gateway'),
   updateGateway: (body: GatewaySettings) => putData<GatewaySettings>('/admin/payment-gateway', body),
-  simulation: () => getData<{ scenarios: ScenarioState[]; retainedMb: number; taggedSeries: number }>('/admin/simulation'),
+  simulation: () => getData<{ scenarios: ScenarioState[]; retainedMb: number; taggedSeries: number; queue: QueueStatus | null }>('/admin/simulation'),
   setScenario: (scenario: string, body: { active: boolean; params?: Record<string, unknown>; durationMinutes?: number }) =>
     putData<ScenarioState>(`/admin/simulation/${scenario}`, body),
   releaseMemory: () => postData<number>('/admin/simulation/release-memory'),

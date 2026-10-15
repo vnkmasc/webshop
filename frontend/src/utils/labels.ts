@@ -22,6 +22,12 @@ export const RISK_LEVEL: Record<string, { label: string; color: string }> = {
   LOW: { label: 'Rủi ro thấp', color: 'green' },
 };
 
+export const FULFILLMENT: Record<string, { label: string; color: string }> = {
+  QUEUED: { label: 'Chờ kho nhận', color: 'gold' },
+  RECEIVED: { label: 'Kho đã nhận', color: 'green' },
+  SEND_FAILED: { label: 'Không gửi được sang kho', color: 'red' },
+};
+
 export const RISK_REASON: Record<string, string> = {
   AMOUNT_UNUSUAL: 'Giá trị bất thường',
   REPEAT_PHONE_24H: 'Nhiều đơn cùng SĐT trong 24h',

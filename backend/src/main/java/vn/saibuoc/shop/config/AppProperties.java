@@ -13,7 +13,8 @@ public record AppProperties(
         Jwt jwt,
         Shipping shipping,
         Payment payment,
-        Risk risk) {
+        Risk risk,
+        Events events) {
 
     public record Jwt(String secret, Duration ttl) {
     }
@@ -26,5 +27,12 @@ public record AppProperties(
 
     /** Order risk scoring service; disabled when url is empty. */
     public record Risk(String url, String apiKey, Duration timeout) {
+    }
+
+    /** Order event queue (Kafka); disabled when bootstrap is empty. */
+    public record Events(String bootstrap, String topic, String group) {
+        public boolean enabled() {
+            return bootstrap != null && !bootstrap.isBlank();
+        }
     }
 }

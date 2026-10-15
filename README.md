@@ -7,8 +7,11 @@
 ```
 Trình duyệt ──> frontend (React, file tĩnh) ──/api──> backend (Spring Boot) ──JDBC──> PostgreSQL: shop
                                                             ├──HTTP──> risk (Python, FastAPI)
-                                                            └──HTTP──> payment (Spring Boot) ──JDBC──> PostgreSQL: payments
+                                                            ├──HTTP──> payment (Spring Boot) ──JDBC──> PostgreSQL: payments
+                                                            └──Kafka topic orders──> consumer "kho" (trong backend, group shop-warehouse)
 ```
+
+Sau khi đặt hàng thành công, backend gửi sự kiện `ORDER_PLACED` (khóa là mã đơn) vào topic `orders`. Một consumer chạy trong chính backend nhưng ở consumer group riêng (`shop-warehouse`) đóng vai **kho**: đọc sự kiện, đặt trạng thái kho của đơn thành "Kho đã nhận" và ghi vào lịch sử đơn thời gian đơn đã nằm chờ trong hàng đợi. Hàng đợi là phần phụ trợ: Kafka không chạy thì khách vẫn đặt được hàng, đơn chỉ bị đánh dấu "Không gửi được sang kho". Thanh toán vẫn đồng bộ như cũ.
 
 | Thành phần | Công nghệ | Cổng mặc định | Ghi chú |
 |---|---|---|---|
@@ -17,6 +20,7 @@ Trình duyệt ──> frontend (React, file tĩnh) ──/api──> backend (S
 | `payment/` | Spring Boot 3.4, Java 21, JDBC, Flyway | 8090 (API + actuator) | Database `payments`; có `Containerfile` |
 | `risk/` | Python 3.11, FastAPI | 8095 | Không database; phụ trợ: không phản hồi thì đơn vẫn đặt được. Xem [risk/README.md](risk/README.md) |
 | PostgreSQL | 16 | 5432 | Hai database riêng; bảng do Flyway tạo khi khởi động |
+| Kafka | 3.x / 4.x (KRaft) | 9092 | Tùy chọn. Topic `orders` (3 partition) do backend tự tạo |
 
 ## Tính năng
 
@@ -53,6 +57,8 @@ Trình duyệt ──> frontend (React, file tĩnh) ──/api──> backend (S
 | `PAYMENT_READ_TIMEOUT` | `PT8S` | Thời gian chờ cổng thanh toán |
 | `APP_RISK_URL`, `RISK_API_KEY` | -, - | Dịch vụ chấm điểm rủi ro; để trống `APP_RISK_URL` thì không chấm điểm |
 | `RISK_TIMEOUT` | `PT3S` | Thời gian chờ dịch vụ rủi ro |
+| `APP_KAFKA_BOOTSTRAP` | - | Địa chỉ Kafka (`host:9092`); để trống thì không có hàng đợi đơn hàng và các kịch bản `KAFKA_*` |
+| `APP_KAFKA_TOPIC`, `APP_KAFKA_GROUP` | `orders`, `shop-warehouse` | Topic sự kiện đơn hàng và consumer group của kho |
 | `APP_ADMIN_EMAIL`, `APP_ADMIN_PASSWORD` | `admin@saibuoc.vn`, - | Tài khoản quản trị tạo ở lần khởi động đầu |
 | `APP_SEED_ENABLED` | `false` (`true` ở profile `local`) | Nạp dữ liệu mẫu khi database trống: 96 sản phẩm, ~250 khách, 90 ngày đơn hàng, mã giảm giá |
 | `APP_SIMULATION_ENABLED` | `false` (`true` ở profile `local`) | Bật API và trang mô phỏng sự cố |
@@ -103,6 +109,8 @@ Khi `APP_SIMULATION_ENABLED=true`, quản trị viên bật/tắt các kịch b�
 | `READINESS_FAIL` | `/actuator/health/readiness` báo DOWN, liveness vẫn UP |
 | `EMIT_PII` | Thanh toán thẻ đính dữ liệu giả cố định (thẻ test `4111111111111111`, `demo@example.com`, CVV `000`) vào URL, header của lệnh gọi sang payment và vào log |
 | `RISK_SLOW`, `RISK_ERROR`, `RISK_TIMEOUT` | Dịch vụ rủi ro chậm thêm `delayMs` / lỗi 500 ở `percent` lời gọi / trả lời quá timeout 3 giây; đơn vẫn đặt được |
+| `KAFKA_SLOW_CONSUMER` | Kho xử lý mỗi sự kiện chậm thêm `delayMs` (tối đa 20.000); lag dồn lên khi đơn đến nhanh hơn tốc độ xử lý, tắt thì rút về 0 |
+| `KAFKA_CONSUMER_DEAD` | Kho ngừng đọc (rời consumer group, số thành viên về 0) trong khi đơn vẫn được gửi vào; lag tăng đều. Tắt hoặc hết giờ thì đọc lại từ chỗ dừng |
 | `METRIC_CARDINALITY` | Counter `shop.request.tagged` có tag duy nhất theo request, tối đa 5.000 series, xoá hết khi tắt (`perRequest`, `maxSeries`) |
 
 Nhóm API (`target`): `ALL`, `CATALOG`, `CART`, `CHECKOUT`, `ACCOUNT`, `ADMIN`.
@@ -120,6 +128,7 @@ GET  /api/admin/payment-gateway        PUT cùng đường dẫn để đổi h�
 - Actuator (cổng quản trị): `/actuator/health` (kèm `liveness`, `readiness`), `/actuator/info`, `/actuator/prometheus` không cần đăng nhập; `/actuator/metrics` cần token quản trị.
 - Payment: mọi kết quả charge có `responseCode` (`00` = đã xử lý) trong body và header `X-Response-Code`.
 - Metric nghiệp vụ: `shop.orders.placed{payment}`, `shop.order.value`, `shop.payments{result}` (`approved`, `declined`, `business_error`, `gateway_error`), `gateway.charges{result}`, `gateway.charge.duration`.
+- Metric hàng đợi: `shop.events.lag{topic,group}` và `shop.events.consumers{topic,group}` (đo từ phía broker mỗi 10 giây, vẫn đúng khi consumer đã chết), `shop.events.published{result}`, `shop.events.consumed{result}`, `shop.events.queue.time` (thời gian sự kiện nằm chờ); cùng các metric `kafka.producer.*`, `kafka.consumer.*` của Kafka client.
 
 ## Build và chạy
 

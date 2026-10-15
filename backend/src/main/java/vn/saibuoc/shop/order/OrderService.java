@@ -14,6 +14,7 @@ import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import java.math.BigDecimal;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
@@ -34,6 +35,8 @@ import vn.saibuoc.shop.catalog.ProductVariant;
 import vn.saibuoc.shop.catalog.ProductVariantRepository;
 import vn.saibuoc.shop.common.BusinessException;
 import vn.saibuoc.shop.config.AppProperties;
+import vn.saibuoc.shop.events.OrderEvent;
+import vn.saibuoc.shop.events.OrderEventPublisher;
 import org.springframework.jdbc.core.JdbcTemplate;
 import vn.saibuoc.shop.payment.PaymentClient;
 import vn.saibuoc.shop.risk.RiskClient;
@@ -65,10 +68,13 @@ public class OrderService {
     private final SimulationService simulation;
     private final RiskClient riskClient;
     private final JdbcTemplate jdbc;
+    private final OrderEventPublisher events;
 
     public OrderService(OrderRepository orders, ProductVariantRepository variants, CouponRepository coupons,
                         PaymentClient paymentClient, TransactionTemplate tx, AppProperties props, Clock clock,
-                        MeterRegistry meters, SimulationService simulation, RiskClient riskClient, JdbcTemplate jdbc) {
+                        MeterRegistry meters, SimulationService simulation, RiskClient riskClient, JdbcTemplate jdbc,
+                        OrderEventPublisher events) {
+        this.events = events;
         this.simulation = simulation;
         this.riskClient = riskClient;
         this.jdbc = jdbc;
@@ -133,13 +139,14 @@ public class OrderService {
     public record HistoryDto(String fromStatus, String toStatus, String note, String changedBy, Instant changedAt) {
     }
 
-    /** riskScore/riskLevel/riskReasons are only filled for admin views; null for customers. */
+    /** riskScore/riskLevel/riskReasons and fulfillment* are only filled for admin views; null for customers. */
     public record OrderDto(String code, String status, String paymentMethod, String paymentStatus, String paymentRef,
                            String paymentError, String customerName, String phone, String email, String address,
                            String province, String note, BigDecimal subtotal, BigDecimal discount,
                            BigDecimal shippingFee, BigDecimal total, String couponCode, Long userId,
                            Instant createdAt, Instant updatedAt, List<OrderItemDto> items, List<HistoryDto> history,
-                           Integer riskScore, String riskLevel, List<String> riskReasons) {
+                           Integer riskScore, String riskLevel, List<String> riskReasons, String fulfillmentStatus,
+                           Instant fulfillmentAt) {
     }
 
     public record OrderSummary(String code, String status, String paymentMethod, String paymentStatus,
@@ -260,7 +267,17 @@ public class OrderService {
             tx.executeWithoutResult(s -> paid(code, result.reference()));
             meters.counter("shop.payments", "result", "approved").increment();
         }
-        OrderDto dto = tx.execute(s -> toDto(load(code), false));
+        OrderDto dto = tx.execute(s -> {
+            Order o = load(code);
+            if (events.enabled()) {
+                o.setFulfillmentStatus("QUEUED");
+            }
+            return toDto(o, false);
+        });
+        // After the commit, so the warehouse always finds the order.
+        events.publish(new OrderEvent(OrderEvent.ORDER_PLACED, dto.code(), dto.total(), dto.paymentMethod(),
+                dto.province(), dto.items().stream().map(i -> new OrderEvent.Line(i.variantId(), i.quantity())).toList(),
+                dto.createdAt()));
         orderValue.record(dto.total().doubleValue());
         Counter.builder("shop.orders.placed").tag("payment", method.name()).register(meters).increment();
         log.info("Order placed code={} total={} items={} payment={} coupon={} customer={}", dto.code(), dto.total(),
@@ -405,6 +422,23 @@ public class OrderService {
         if (o.getCouponCode() != null) {
             coupons.lockByCode(o.getCouponCode()).ifPresent(c -> c.setUsedCount(Math.max(0, c.getUsedCount() - 1)));
         }
+    }
+
+    // ------------------------------------------------------------------ warehouse hand-over
+
+    /** Called by the order queue consumer. False when the order is gone or was already taken over. */
+    public boolean warehouseReceived(String code, Duration waited) {
+        return Boolean.TRUE.equals(tx.execute(s -> {
+            Order o = orders.findByCode(code).orElse(null);
+            if (o == null || "RECEIVED".equals(o.getFulfillmentStatus())) {
+                return false;
+            }
+            o.setFulfillmentStatus("RECEIVED");
+            o.setFulfillmentAt(clock.instant());
+            addHistory(o, o.getStatus(), o.getStatus(), "Kho đã nhận đơn qua hàng đợi (chờ "
+                    + Math.round(waited.toMillis() / 100.0) / 10.0 + " giây)", "Kho");
+            return true;
+        }));
     }
 
     // ------------------------------------------------------------------ life cycle
@@ -557,7 +591,8 @@ public class OrderService {
                         h.getChangedBy(), h.getChangedAt())).toList(),
                 admin ? o.getRiskScore() : null, admin ? o.getRiskLevel() : null,
                 admin && o.getRiskReasons() != null && !o.getRiskReasons().isBlank()
-                        ? List.of(o.getRiskReasons().split(",")) : null);
+                        ? List.of(o.getRiskReasons().split(",")) : null,
+                admin ? o.getFulfillmentStatus() : null, admin ? o.getFulfillmentAt() : null);
     }
 
     private static OrderSummary summary(Order o) {
