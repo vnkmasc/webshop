@@ -1,0 +1,12 @@
+# Shop backend image:
+#   (cd backend && ./mvnw -q package -DskipTests && docker build -t shop-backend:<tag> -f Containerfile target)
+# The base image starts every jar in /deployments with run-java.sh as the non-root user 185;
+# JVM flags come from JAVA_OPTS_APPEND; configuration from environment variables (see README).
+FROM registry.access.redhat.com/ubi9/openjdk-21-runtime:1.21
+
+LABEL org.opencontainers.image.title="shop-backend" \
+      org.opencontainers.image.description="Sai Buoc shop backend"
+
+COPY --chown=185:0 shop-backend.jar /deployments/shop-backend.jar
+# 8080 API, 8081 management (health, metrics)
+EXPOSE 8080 8081

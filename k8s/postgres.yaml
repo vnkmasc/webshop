@@ -1,0 +1,87 @@
+# PostgreSQL 16, single instance, data on a PersistentVolumeClaim (default StorageClass).
+# First start creates database "shop" (owner shop, from POSTGRES_*) and database "payments" (owner payments).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-init
+data:
+  10-payments.sh: |
+    #!/bin/sh
+    set -e
+    psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" \
+      -v pw="$PAYMENT_DB_PASSWORD" <<'SQL'
+    CREATE ROLE payments LOGIN PASSWORD :'pw';
+    CREATE DATABASE payments OWNER payments;
+    SQL
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+spec:
+  selector:
+    app: postgres
+  ports:
+    - name: postgres
+      port: 5432
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+spec:
+  serviceName: postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      # Service links would add PAYMENT_PORT=tcp://..., BACKEND_PORT, RISK_PORT..., which clash with app settings.
+      enableServiceLinks: false
+      containers:
+        - name: postgres
+          image: docker.io/library/postgres:16.10
+          ports:
+            - name: postgres
+              containerPort: 5432
+          env:
+            - name: POSTGRES_DB
+              value: shop
+            - name: POSTGRES_USER
+              value: shop
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef: {name: shop-secrets, key: DB_PASSWORD}
+            - name: PAYMENT_DB_PASSWORD
+              valueFrom:
+                secretKeyRef: {name: shop-secrets, key: PAYMENT_DB_PASSWORD}
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          readinessProbe:
+            exec:
+              command: ["sh", "-c", "pg_isready -U shop -d shop -h 127.0.0.1"]
+            periodSeconds: 5
+          resources:
+            requests: {cpu: 200m, memory: 256Mi}
+            limits: {cpu: "2", memory: 1Gi}
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+            - name: init
+              mountPath: /docker-entrypoint-initdb.d
+      volumes:
+        - name: init
+          configMap:
+            name: postgres-init
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 5Gi

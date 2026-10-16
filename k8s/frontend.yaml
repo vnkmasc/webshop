@@ -1,0 +1,51 @@
+# Storefront and admin (static files) behind nginx, which forwards /api/ to the backend Service.
+# Exposed on every node at NodePort 30080: http://<node IP>:30080
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend
+spec:
+  type: NodePort
+  selector:
+    app: frontend
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+      nodePort: 30080
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+  labels:
+    app: frontend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: frontend
+  template:
+    metadata:
+      labels:
+        app: frontend
+    spec:
+      # Service links would add PAYMENT_PORT=tcp://..., BACKEND_PORT, RISK_PORT..., which clash with app settings.
+      enableServiceLinks: false
+      containers:
+        - name: nginx
+          image: shop-frontend:latest
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - {name: BACKEND_UPSTREAM, value: "backend:8080"}
+          readinessProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 15
+          resources:
+            requests: {cpu: 50m, memory: 32Mi}
+            limits: {cpu: 500m, memory: 128Mi}

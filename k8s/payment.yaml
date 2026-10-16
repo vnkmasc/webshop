@@ -1,0 +1,69 @@
+# Card payment gateway simulator (Java). Only the backend calls it, with PAYMENT_API_KEY.
+apiVersion: v1
+kind: Service
+metadata:
+  name: payment
+spec:
+  selector:
+    app: payment
+  ports:
+    - name: http
+      port: 8090
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: payment
+  labels:
+    app: payment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: payment
+  template:
+    metadata:
+      labels:
+        app: payment
+    spec:
+      # Service links would add PAYMENT_PORT=tcp://..., BACKEND_PORT, RISK_PORT..., which clash with app settings.
+      enableServiceLinks: false
+      containers:
+        - name: payment
+          image: shop-payment:latest
+          ports:
+            - name: http
+              containerPort: 8090
+          env:
+            - {name: PAYMENT_BIND_ADDRESS, value: 0.0.0.0}
+            - {name: JAVA_OPTS_APPEND, value: "-Xms128m -Xmx384m -Duser.timezone=UTC"}
+            - {name: LOGGING_STRUCTURED_FORMAT_CONSOLE, value: ecs}
+            - name: DB_HOST
+              valueFrom: {configMapKeyRef: {name: shop-config, key: DB_HOST}}
+            - name: DB_PORT
+              valueFrom: {configMapKeyRef: {name: shop-config, key: DB_PORT}}
+            - name: PAYMENT_DB_NAME
+              valueFrom: {configMapKeyRef: {name: shop-config, key: PAYMENT_DB_NAME}}
+            - name: PAYMENT_DB_USER
+              valueFrom: {configMapKeyRef: {name: shop-config, key: PAYMENT_DB_USER}}
+            - name: APP_RELEASE_VERSION
+              valueFrom: {configMapKeyRef: {name: shop-config, key: APP_RELEASE_VERSION}}
+            - name: APP_RELEASE_STAGE
+              valueFrom: {configMapKeyRef: {name: shop-config, key: APP_RELEASE_STAGE}}
+            - name: PAYMENT_DB_PASSWORD
+              valueFrom: {secretKeyRef: {name: shop-secrets, key: PAYMENT_DB_PASSWORD}}
+            - name: PAYMENT_API_KEY
+              valueFrom: {secretKeyRef: {name: shop-secrets, key: PAYMENT_API_KEY}}
+          startupProbe:
+            httpGet: {path: /actuator/health/liveness, port: http}
+            periodSeconds: 5
+            failureThreshold: 36
+          livenessProbe:
+            httpGet: {path: /actuator/health/liveness, port: http}
+            periodSeconds: 15
+          readinessProbe:
+            httpGet: {path: /actuator/health/readiness, port: http}
+            periodSeconds: 10
+          resources:
+            requests: {cpu: 100m, memory: 384Mi}
+            limits: {cpu: "1", memory: 640Mi}

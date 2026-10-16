@@ -1,0 +1,12 @@
+# Front end image: the static build served by nginx, which also forwards /api/ to the backend.
+#   (cd frontend && npm ci && npm run build && docker build -t shop-frontend:<tag> -f Containerfile .)
+# BACKEND_UPSTREAM (host:port of the backend API, default backend:8080) is filled in at start-up.
+FROM docker.io/nginxinc/nginx-unprivileged:1.28.0-alpine
+
+LABEL org.opencontainers.image.title="shop-frontend" \
+      org.opencontainers.image.description="Sai Buoc storefront and admin (static) behind nginx"
+
+ENV BACKEND_UPSTREAM=backend:8080
+COPY container/default.conf.template /etc/nginx/templates/default.conf.template
+COPY dist/ /usr/share/nginx/html/
+EXPOSE 8080

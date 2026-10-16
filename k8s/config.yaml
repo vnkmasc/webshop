@@ -1,0 +1,24 @@
+# Non-secret settings shared by the shop services. Secrets are in the Secret "shop-secrets" (deploy.sh creates it).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: shop-config
+data:
+  APP_RELEASE_VERSION: "1.0.0"
+  APP_RELEASE_STAGE: kubernetes
+  # Sample data and the fault-injection API: test environments only.
+  APP_SEED_ENABLED: "true"
+  APP_SIMULATION_ENABLED: "true"
+  APP_ADMIN_EMAIL: admin@saibuoc.vn
+  DB_HOST: postgres
+  DB_PORT: "5432"
+  DB_NAME: shop
+  DB_USER: shop
+  PAYMENT_DB_NAME: payments
+  PAYMENT_DB_USER: payments
+  PAYMENT_URL: http://payment:8090
+  APP_RISK_URL: http://risk:8095
+  # Empty = order queue off.
+  APP_KAFKA_BOOTSTRAP: kafka:9092
+  APP_KAFKA_TOPIC: orders
+  APP_KAFKA_GROUP: shop-warehouse

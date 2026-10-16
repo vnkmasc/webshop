@@ -1,6 +1,6 @@
 # Sải Bước - cửa hàng giày trực tuyến
 
-Ứng dụng web bán giày gồm trang mua sắm cho khách, trang quản trị cho cửa hàng, một dịch vụ cổng thanh toán thẻ giả lập (Java) và một dịch vụ chấm điểm rủi ro đơn hàng (Python). Repo này chỉ chứa **mã nguồn ứng dụng**; cách triển khai lên từng loại hạ tầng, tải giả lập và kịch bản demo nằm ở repo `webshop-demo`.
+Ứng dụng web bán giày gồm trang mua sắm cho khách, trang quản trị cho cửa hàng, một dịch vụ cổng thanh toán thẻ giả lập (Java) và một dịch vụ chấm điểm rủi ro đơn hàng (Python). Repo này chứa mã nguồn ứng dụng, cách build image container và manifest để chạy trên Kubernetes ([k8s/README.md](k8s/README.md)); cách triển khai lên từng môi trường cụ thể, tải giả lập và kịch bản demo nằm ở repo `webshop-demo`.
 
 ## Kiến trúc
 
@@ -15,10 +15,10 @@ Sau khi đặt hàng thành công, backend gửi sự kiện `ORDER_PLACED` (kh�
 
 | Thành phần | Công nghệ | Cổng mặc định | Ghi chú |
 |---|---|---|---|
-| `frontend/` | React 18, Vite, antd, TanStack Query, recharts | (file tĩnh) | Phục vụ bằng web server bất kỳ; mọi đường dẫn không phải file → `index.html`; `/api/` chuyển sang backend |
-| `backend/` | Spring Boot 3.4, Java 21, JPA + JDBC, Flyway, JWT | 8080 (API), 8081 (actuator) | Database `shop` |
+| `frontend/` | React 18, Vite, antd, TanStack Query, recharts | (file tĩnh) | Phục vụ bằng web server bất kỳ; mọi đường dẫn không phải file → `index.html`; `/api/` chuyển sang backend. `Containerfile`: nginx kèm sẵn cấu hình này |
+| `backend/` | Spring Boot 3.4, Java 21, JPA + JDBC, Flyway, JWT | 8080 (API), 8081 (actuator) | Database `shop`; có `Containerfile` |
 | `payment/` | Spring Boot 3.4, Java 21, JDBC, Flyway | 8090 (API + actuator) | Database `payments`; có `Containerfile` |
-| `risk/` | Python 3.11, FastAPI | 8095 | Không database; phụ trợ: không phản hồi thì đơn vẫn đặt được. Xem [risk/README.md](risk/README.md) |
+| `risk/` | Python 3.11, FastAPI | 8095 | Không database; phụ trợ: không phản hồi thì đơn vẫn đặt được; có `Containerfile`. Xem [risk/README.md](risk/README.md) |
 | PostgreSQL | 16 | 5432 | Hai database riêng; bảng do Flyway tạo khi khởi động |
 | Kafka | 3.x / 4.x (KRaft) | 9092 | Tùy chọn. Topic `orders` (3 partition) do backend tự tạo |
 
@@ -147,5 +147,14 @@ docker build -t shop-payment:dev -f payment/Containerfile payment/target
 (cd backend && DB_PASSWORD=... JWT_SECRET=$(openssl rand -base64 48) ./mvnw spring-boot:run)
 (cd frontend && VITE_DEV_PROXY_TARGET=http://localhost:8080 npm run dev)
 ```
+
+## Image container và Kubernetes
+
+```bash
+scripts/build-images.sh -p registry.example.com/shop          # build 4 image shop-{backend,payment,risk,frontend} và đẩy lên registry
+k8s/deploy.sh registry.example.com/shop <tag>                 # chạy toàn bộ cửa hàng (kèm PostgreSQL, Kafka) trên cụm hiện tại
+```
+
+Chi tiết: [k8s/README.md](k8s/README.md).
 
 Ảnh sản phẩm (`frontend/public/images/shoes/*.svg`) được sinh bởi `node scripts/gen-shoe-images.mjs`.

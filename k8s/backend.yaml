@@ -1,0 +1,74 @@
+# Shop backend (Java, Spring Boot): API on 8080, management (health, metrics) on 8081.
+# Readiness follows /actuator/health/readiness: while it is DOWN (database lost, READINESS_FAIL scenario)
+# the pod receives no traffic and the shop answers 502/503.
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend
+spec:
+  selector:
+    app: backend
+  ports:
+    - name: http
+      port: 8080
+    - name: management
+      port: 8081
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+  labels:
+    app: backend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: backend
+  template:
+    metadata:
+      labels:
+        app: backend
+    spec:
+      # Service links would add PAYMENT_PORT=tcp://..., BACKEND_PORT, RISK_PORT..., which clash with app settings.
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 40
+      containers:
+        - name: backend
+          image: shop-backend:latest
+          ports:
+            - name: http
+              containerPort: 8080
+            - name: management
+              containerPort: 8081
+          envFrom:
+            - configMapRef:
+                name: shop-config
+          env:
+            # No profile-specific settings: logs go to stdout as ECS JSON.
+            - {name: SPRING_PROFILES_ACTIVE, value: kubernetes}
+            - {name: LOGGING_STRUCTURED_FORMAT_CONSOLE, value: ecs}
+            - {name: JAVA_OPTS_APPEND, value: "-Xms512m -Xmx1g -Duser.timezone=UTC"}
+            - name: DB_PASSWORD
+              valueFrom: {secretKeyRef: {name: shop-secrets, key: DB_PASSWORD}}
+            - name: JWT_SECRET
+              valueFrom: {secretKeyRef: {name: shop-secrets, key: JWT_SECRET}}
+            - name: APP_ADMIN_PASSWORD
+              valueFrom: {secretKeyRef: {name: shop-secrets, key: APP_ADMIN_PASSWORD}}
+            - name: PAYMENT_API_KEY
+              valueFrom: {secretKeyRef: {name: shop-secrets, key: PAYMENT_API_KEY}}
+            - name: RISK_API_KEY
+              valueFrom: {secretKeyRef: {name: shop-secrets, key: RISK_API_KEY}}
+          startupProbe:
+            httpGet: {path: /actuator/health/liveness, port: management}
+            periodSeconds: 5
+            failureThreshold: 60
+          livenessProbe:
+            httpGet: {path: /actuator/health/liveness, port: management}
+            periodSeconds: 15
+          readinessProbe:
+            httpGet: {path: /actuator/health/readiness, port: management}
+            periodSeconds: 10
+          resources:
+            requests: {cpu: 250m, memory: 1Gi}
+            limits: {cpu: "2", memory: 1536Mi}

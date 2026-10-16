@@ -1,0 +1,52 @@
+# Order risk scoring (Python, FastAPI). Optional for checkout: if it is down, orders are still placed.
+apiVersion: v1
+kind: Service
+metadata:
+  name: risk
+spec:
+  selector:
+    app: risk
+  ports:
+    - name: http
+      port: 8095
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: risk
+  labels:
+    app: risk
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: risk
+  template:
+    metadata:
+      labels:
+        app: risk
+    spec:
+      # Service links would add PAYMENT_PORT=tcp://..., BACKEND_PORT, RISK_PORT..., which clash with app settings.
+      enableServiceLinks: false
+      containers:
+        - name: risk
+          image: shop-risk:latest
+          ports:
+            - name: http
+              containerPort: 8095
+          env:
+            - name: APP_RELEASE_VERSION
+              valueFrom: {configMapKeyRef: {name: shop-config, key: APP_RELEASE_VERSION}}
+            - name: APP_RELEASE_STAGE
+              valueFrom: {configMapKeyRef: {name: shop-config, key: APP_RELEASE_STAGE}}
+            - name: RISK_API_KEY
+              valueFrom: {secretKeyRef: {name: shop-secrets, key: RISK_API_KEY}}
+          readinessProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 15
+          resources:
+            requests: {cpu: 50m, memory: 64Mi}
+            limits: {cpu: "1", memory: 256Mi}
