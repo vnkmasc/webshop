@@ -275,9 +275,7 @@ public class OrderService {
             return toDto(o, false);
         });
         // After the commit, so the warehouse always finds the order.
-        events.publish(new OrderEvent(OrderEvent.ORDER_PLACED, dto.code(), dto.total(), dto.paymentMethod(),
-                dto.province(), dto.items().stream().map(i -> new OrderEvent.Line(i.variantId(), i.quantity())).toList(),
-                dto.createdAt()));
+        events.publish(placedEvent(dto));
         orderValue.record(dto.total().doubleValue());
         Counter.builder("shop.orders.placed").tag("payment", method.name()).register(meters).increment();
         log.info("Order placed code={} total={} items={} payment={} coupon={} customer={}", dto.code(), dto.total(),
@@ -427,6 +425,29 @@ public class OrderService {
     // ------------------------------------------------------------------ warehouse hand-over
 
     /** Called by the order queue consumer. False when the order is gone or was already taken over. */
+    private static OrderEvent placedEvent(OrderDto dto) {
+        return new OrderEvent(OrderEvent.ORDER_PLACED, dto.code(), dto.total(), dto.paymentMethod(), dto.province(),
+                dto.items().stream().map(i -> new OrderEvent.Line(i.variantId(), i.quantity())).toList(), dto.createdAt());
+    }
+
+    /** Events of orders that could not be handed to the queue (SEND_FAILED), oldest first. */
+    public List<OrderEvent> unsentEvents(int limit) {
+        List<String> codes = jdbc.queryForList(
+                "SELECT code FROM orders WHERE fulfillment_status = 'SEND_FAILED' ORDER BY created_at LIMIT ?",
+                String.class, limit);
+        return tx.execute(s -> codes.stream().map(c -> placedEvent(toDto(load(c), false))).toList());
+    }
+
+    /** The event of a SEND_FAILED order was sent again: back to QUEUED (unless the warehouse already has it). */
+    public void requeued(String code) {
+        tx.executeWithoutResult(s -> orders.findByCode(code)
+                .filter(o -> "SEND_FAILED".equals(o.getFulfillmentStatus()))
+                .ifPresent(o -> {
+                    o.setFulfillmentStatus("QUEUED");
+                    addHistory(o, o.getStatus(), o.getStatus(), "Đã gửi lại đơn sang kho qua hàng đợi", "Hệ thống");
+                }));
+    }
+
     public boolean warehouseReceived(String code, Duration waited) {
         return Boolean.TRUE.equals(tx.execute(s -> {
             Order o = orders.findByCode(code).orElse(null);

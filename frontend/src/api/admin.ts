@@ -30,10 +30,13 @@ export interface AdminProduct {
 
 export type ProductInput = Omit<AdminProduct, 'id' | 'slug' | 'soldCount' | 'createdAt' | 'variants'>;
 
-/** Order queue measured from the broker; lag/consumers are null when it cannot be reached (error set). */
+/**
+ * Order queue measured from the broker; lag/consumers are null when it cannot be reached (error set).
+ * unsent: orders whose event could not be sent yet (re-sent automatically once the broker is back).
+ */
 export interface QueueStatus {
   topic: string; group: string; lag: number | null; consumers: number | null; lagByPartition: Record<string, number>;
-  at: string | null; error: string | null;
+  unsent: number | null; at: string | null; error: string | null;
 }
 
 export interface OrderRow {

@@ -105,6 +105,8 @@ app:
     bootstrap: ${APP_KAFKA_BOOTSTRAP:}
     topic: ${APP_KAFKA_TOPIC:orders}
     group: ${APP_KAFKA_GROUP:shop-warehouse}
+    send-timeout: ${APP_KAFKA_SEND_TIMEOUT:PT2S}
+    relay-interval: ${APP_KAFKA_RELAY_INTERVAL:PT30S}
 
 logging:
   pattern:

@@ -13,6 +13,8 @@ Trình duyệt ──> frontend (React, file tĩnh) ──/api──> backend (S
 
 Sau khi đặt hàng thành công, backend gửi sự kiện `ORDER_PLACED` (khóa là mã đơn) vào topic `orders`. Một consumer chạy trong chính backend nhưng ở consumer group riêng (`shop-warehouse`) đóng vai **kho**: đọc sự kiện, đặt trạng thái kho của đơn thành "Kho đã nhận" và ghi vào lịch sử đơn thời gian đơn đã nằm chờ trong hàng đợi. Hàng đợi là phần phụ trợ: Kafka không chạy thì khách vẫn đặt được hàng, đơn chỉ bị đánh dấu "Không gửi được sang kho". Thanh toán vẫn đồng bộ như cũ.
 
+Lúc đặt hàng, backend chờ broker xác nhận sự kiện tối đa `APP_KAFKA_SEND_TIMEOUT` (2 giây). Vì vậy khi hàng đợi hỏng, request đặt hàng **không im lặng**: chậm thêm tới vài giây, có exception `OrderEventException` trong trace, header `X-Order-Queue: FAILED` (bình thường là `SENT`) và log lỗi kèm trace id. Mỗi `APP_KAFKA_RELAY_INTERVAL` (30 giây) backend gửi lại sự kiện của các đơn "Không gửi được sang kho", cũ trước; broker sống lại thì các đơn này về kho, không mất đơn nào.
+
 | Thành phần | Công nghệ | Cổng mặc định | Ghi chú |
 |---|---|---|---|
 | `frontend/` | React 18, Vite, antd, TanStack Query, recharts | (file tĩnh) | Phục vụ bằng web server bất kỳ; mọi đường dẫn không phải file → `index.html`; `/api/` chuyển sang backend. `Containerfile`: nginx kèm sẵn cấu hình này |
@@ -59,6 +61,8 @@ Sau khi đặt hàng thành công, backend gửi sự kiện `ORDER_PLACED` (kh�
 | `RISK_TIMEOUT` | `PT3S` | Thời gian chờ dịch vụ rủi ro |
 | `APP_KAFKA_BOOTSTRAP` | - | Địa chỉ Kafka (`host:9092`); để trống thì không có hàng đợi đơn hàng và các kịch bản `KAFKA_*` |
 | `APP_KAFKA_TOPIC`, `APP_KAFKA_GROUP` | `orders`, `shop-warehouse` | Topic sự kiện đơn hàng và consumer group của kho |
+| `APP_KAFKA_SEND_TIMEOUT` | `PT2S` | Thời gian đặt hàng chờ broker xác nhận sự kiện |
+| `APP_KAFKA_RELAY_INTERVAL` | `PT30S` | Chu kỳ gửi lại sự kiện của các đơn chưa gửi được |
 | `APP_ADMIN_EMAIL`, `APP_ADMIN_PASSWORD` | `admin@saibuoc.vn`, - | Tài khoản quản trị tạo ở lần khởi động đầu |
 | `APP_SEED_ENABLED` | `false` (`true` ở profile `local`) | Nạp dữ liệu mẫu khi database trống: 96 sản phẩm, ~250 khách, 90 ngày đơn hàng, mã giảm giá |
 | `APP_SIMULATION_ENABLED` | `false` (`true` ở profile `local`) | Bật API và trang mô phỏng sự cố |
@@ -125,10 +129,10 @@ GET  /api/admin/payment-gateway        PUT cùng đường dẫn để đổi h�
 ## Quan sát
 
 - Mọi response có `X-Request-Id`; backend chuyển tiếp header này sang payment. Log có `requestId`.
-- Actuator (cổng quản trị): `/actuator/health` (kèm `liveness`, `readiness`), `/actuator/info`, `/actuator/prometheus` không cần đăng nhập; `/actuator/metrics` cần token quản trị.
+- Actuator (cổng quản trị): `/actuator/health` (kèm `liveness`, `readiness`; thành phần `orderQueue` báo DOWN khi không kết nối được Kafka, chỉ ảnh hưởng health tổng, không ảnh hưởng liveness/readiness), `/actuator/info`, `/actuator/prometheus` không cần đăng nhập; `/actuator/metrics` cần token quản trị.
 - Payment: mọi kết quả charge có `responseCode` (`00` = đã xử lý) trong body và header `X-Response-Code`.
 - Metric nghiệp vụ: `shop.orders.placed{payment}`, `shop.order.value`, `shop.payments{result}` (`approved`, `declined`, `business_error`, `gateway_error`), `gateway.charges{result}`, `gateway.charge.duration`.
-- Metric hàng đợi: `shop.events.lag{topic,group}` và `shop.events.consumers{topic,group}` (đo từ phía broker mỗi 10 giây, vẫn đúng khi consumer đã chết), `shop.events.published{result}`, `shop.events.consumed{result}`, `shop.events.queue.time` (thời gian sự kiện nằm chờ); cùng các metric `kafka.producer.*`, `kafka.consumer.*` của Kafka client.
+- Metric hàng đợi: `shop.events.lag{topic,group}` và `shop.events.consumers{topic,group}` (đo từ phía broker mỗi 10 giây, vẫn đúng khi consumer đã chết), `shop.events.unsent` (số đơn chưa gửi được sang hàng đợi, đếm trong database nên vẫn đúng khi broker chết), `shop.events.published{result}`, `shop.events.consumed{result}`, `shop.events.queue.time` (thời gian sự kiện nằm chờ); cùng các metric `kafka.producer.*`, `kafka.consumer.*` của Kafka client.
 
 ## Build và chạy
 

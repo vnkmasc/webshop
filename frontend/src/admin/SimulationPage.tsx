@@ -132,8 +132,10 @@ export default function SimulationPage() {
         message="Chỉ dùng trên môi trường thử nghiệm. Mỗi kịch bản tự tắt khi hết thời gian; không kịch bản nào sửa dữ liệu bán hàng."
         action={(
           <Space>
+            {(data?.queue?.unsent ?? 0) > 0 && (
+              <Tag color="red">Chưa gửi được sang kho: {data?.queue?.unsent} đơn</Tag>)}
             {data?.queue && (data.queue.error
-              ? <Tag color="red">Hàng đợi: không đo được</Tag>
+              ? <Tag color="red">Hàng đợi: không kết nối được broker</Tag>
               : <Tag color={(data.queue.lag ?? 0) > 0 || data.queue.consumers === 0 ? 'orange' : 'green'}>
                 Hàng đợi {data.queue.topic}: lag {data.queue.lag} · consumer {data.queue.consumers}</Tag>)}
             <span>Series metric: {data?.taggedSeries ?? 0}</span>

@@ -29,8 +29,11 @@ public record AppProperties(
     public record Risk(String url, String apiKey, Duration timeout) {
     }
 
-    /** Order event queue (Kafka); disabled when bootstrap is empty. */
-    public record Events(String bootstrap, String topic, String group) {
+    /**
+     * Order event queue (Kafka); disabled when bootstrap is empty. sendTimeout: how long checkout waits for the
+     * broker to confirm the event; relayInterval: how often events that could not be sent are retried.
+     */
+    public record Events(String bootstrap, String topic, String group, Duration sendTimeout, Duration relayInterval) {
         public boolean enabled() {
             return bootstrap != null && !bootstrap.isBlank();
         }
